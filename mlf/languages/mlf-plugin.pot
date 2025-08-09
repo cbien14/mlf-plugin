@@ -1,0 +1,29 @@
+# mlf-plugin.pot
+
+msgid ""
+msgstr ""
+"Project-Id-Version: mlf-plugin\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2023-10-03 12:00+0000\n"
+"PO-Revision-Date: 2023-10-03 12:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: \n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# Add your translatable strings below this line
+
+#: includes/class-mlf-plugin.php:10
+msgid "Hello, World!"
+msgstr ""
+
+#: includes/class-mlf-admin.php:15
+msgid "Settings"
+msgstr ""
+
+#: public/class-mlf-public.php:20
+msgid "Welcome to the MLF Plugin"
+msgstr ""
+
+# Add more strings as needed for your plugin
