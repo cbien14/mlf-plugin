@@ -18,6 +18,8 @@ class Mlf_Public {
      */
     public function __construct() {
         // Initialize public-facing functionality here.
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_styles'));
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
     }
 
     /**

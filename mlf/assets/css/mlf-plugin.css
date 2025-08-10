@@ -1,1 +1,123 @@
-/* This file is intentionally left blank. */
+/* MLF Plugin Admin Styles */
+
+/* Image upload containers */
+.mlf-image-upload-container {
+    margin-top: 10px;
+}
+
+.mlf-image-upload-container .button {
+    margin-right: 10px;
+}
+
+.mlf-image-preview {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f9f9f9;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.mlf-image-preview img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.mlf-image-preview:empty {
+    display: none;
+}
+
+/* Remove button styling */
+.mlf-remove-image-btn {
+    background: #dc3232 !important;
+    border-color: #dc3232 !important;
+    color: #fff !important;
+}
+
+.mlf-remove-image-btn:hover {
+    background: #a00 !important;
+    border-color: #a00 !important;
+}
+
+/* Form styling improvements */
+.mlf-session-form .form-table th {
+    vertical-align: top;
+    padding-top: 15px;
+}
+
+.mlf-session-form .form-table td {
+    padding-bottom: 20px;
+}
+
+/* Loading spinner */
+.mlf-loading {
+    margin-left: 10px;
+}
+
+/* Success/Error messages */
+.mlf-session-message {
+    margin-top: 20px;
+}
+
+/* Styles pour l'administration des formulaires personnalisés */
+.mlf-custom-forms .form-field-item {
+    border: 1px solid #ddd;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.mlf-custom-forms .form-field-item h4 {
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.mlf-custom-forms .remove-field-btn {
+    background: #a00;
+    color: white;
+    border-color: #a00;
+}
+
+.mlf-custom-forms .remove-field-btn:hover {
+    background: #c00;
+    border-color: #c00;
+    color: white;
+}
+
+.mlf-custom-forms .status-active {
+    color: #00a32a;
+    font-weight: bold;
+}
+
+.mlf-custom-forms .status-inactive {
+    color: #dba617;
+    font-weight: bold;
+}
+
+.mlf-custom-forms .wp-list-table th {
+    vertical-align: top;
+}
+
+.mlf-custom-forms .field-options-row textarea {
+    min-height: 80px;
+}
+
+/* Responsive admin form */
+@media (max-width: 768px) {
+    .mlf-image-upload-container .button {
+        display: block;
+        margin-bottom: 10px;
+        margin-right: 0;
+    }
+    
+    .mlf-image-preview {
+        margin-top: 15px;
+    }
+}

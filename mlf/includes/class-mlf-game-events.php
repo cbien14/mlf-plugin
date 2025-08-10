@@ -55,14 +55,20 @@ class MLF_Game_Events {
         // Add nonce for security
         wp_nonce_field('save_game_event_meta', 'game_event_meta_nonce');
 
-        // Get current values
-        $game_type = get_post_meta($post->ID, '_mlf_game_type', true);
-        $event_date = get_post_meta($post->ID, '_mlf_event_date', true);
-        $event_time = get_post_meta($post->ID, '_mlf_event_time', true);
-        $max_players = get_post_meta($post->ID, '_mlf_max_players', true);
-        $location = get_post_meta($post->ID, '_mlf_location', true);
-        $difficulty_level = get_post_meta($post->ID, '_mlf_difficulty_level', true);
-        $registration_deadline = get_post_meta($post->ID, '_mlf_registration_deadline', true);
+        // Vérifier que le post existe et a un ID valide
+        if (!$post || !isset($post->ID) || !is_numeric($post->ID)) {
+            echo '<p>' . __('Erreur: Impossible de charger les métadonnées du post.', 'mlf') . '</p>';
+            return;
+        }
+
+        // Get current values avec vérification de sécurité
+        $game_type = get_post_meta($post->ID, '_mlf_game_type', true) ?: '';
+        $event_date = get_post_meta($post->ID, '_mlf_event_date', true) ?: '';
+        $event_time = get_post_meta($post->ID, '_mlf_event_time', true) ?: '';
+        $max_players = get_post_meta($post->ID, '_mlf_max_players', true) ?: '';
+        $location = get_post_meta($post->ID, '_mlf_location', true) ?: '';
+        $difficulty_level = get_post_meta($post->ID, '_mlf_difficulty_level', true) ?: '';
+        $registration_deadline = get_post_meta($post->ID, '_mlf_registration_deadline', true) ?: '';
 
         ?>
         <table class="form-table">
@@ -128,12 +134,18 @@ class MLF_Game_Events {
      * Render the player management meta box.
      */
     public function render_game_event_players_meta_box($post) {
+        // Vérifier que le post existe et a un ID valide
+        if (!$post || !isset($post->ID) || !is_numeric($post->ID)) {
+            echo '<p>Erreur: Impossible de charger les données des joueurs.</p>';
+            return;
+        }
+        
         $registered_players = get_post_meta($post->ID, '_mlf_registered_players', true);
         if (!is_array($registered_players)) {
             $registered_players = array();
         }
 
-        $max_players = get_post_meta($post->ID, '_mlf_max_players', true);
+        $max_players = get_post_meta($post->ID, '_mlf_max_players', true) ?: 0;
         $current_count = count($registered_players);
 
         ?>
@@ -227,13 +239,13 @@ class MLF_Game_Events {
      */
     public static function get_event_details($post_id) {
         return array(
-            'game_type' => get_post_meta($post_id, '_mlf_game_type', true),
-            'event_date' => get_post_meta($post_id, '_mlf_event_date', true),
-            'event_time' => get_post_meta($post_id, '_mlf_event_time', true),
-            'max_players' => get_post_meta($post_id, '_mlf_max_players', true),
-            'location' => get_post_meta($post_id, '_mlf_location', true),
-            'difficulty_level' => get_post_meta($post_id, '_mlf_difficulty_level', true),
-            'registration_deadline' => get_post_meta($post_id, '_mlf_registration_deadline', true),
+            'game_type' => get_post_meta($post_id, '_mlf_game_type', true) ?: '',
+            'event_date' => get_post_meta($post_id, '_mlf_event_date', true) ?: '',
+            'event_time' => get_post_meta($post_id, '_mlf_event_time', true) ?: '',
+            'max_players' => get_post_meta($post_id, '_mlf_max_players', true) ?: '',
+            'location' => get_post_meta($post_id, '_mlf_location', true) ?: '',
+            'difficulty_level' => get_post_meta($post_id, '_mlf_difficulty_level', true) ?: '',
+            'registration_deadline' => get_post_meta($post_id, '_mlf_registration_deadline', true) ?: '',
             'registered_players' => get_post_meta($post_id, '_mlf_registered_players', true) ?: array(),
         );
     }

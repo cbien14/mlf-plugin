@@ -32,14 +32,62 @@
 .mlf-session-card {
     border: 1px solid #e1e1e1;
     border-radius: 8px;
-    padding: 20px;
+    padding: 0;
     background: #fff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     transition: box-shadow 0.3s ease;
+    overflow: hidden;
 }
 
 .mlf-session-card:hover {
     box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Session banner images */
+.mlf-session-banner {
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    border-radius: 8px 8px 0 0;
+}
+
+.mlf-banner-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.mlf-session-banner-large {
+    width: 100%;
+    height: 300px;
+    overflow: hidden;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.mlf-banner-image-large {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+/* Session content with padding */
+.mlf-session-card .mlf-session-header,
+.mlf-session-card .mlf-session-meta,
+.mlf-session-card .mlf-session-description,
+.mlf-session-card .mlf-trigger-warnings,
+.mlf-session-card .mlf-session-actions {
+    padding: 0 20px;
+}
+
+.mlf-session-card .mlf-session-header {
+    padding-top: 20px;
+}
+
+.mlf-session-card .mlf-session-actions {
+    padding-bottom: 20px;
 }
 
 .mlf-session-header {
@@ -213,6 +261,118 @@
 .mlf-session-details h2 {
     margin-top: 0;
     color: #333;
+}
+
+.mlf-session-details {
+    font-family: Arial, sans-serif;
+}
+
+.mlf-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #007cba;
+}
+
+.mlf-details-header h3 {
+    margin: 0;
+    color: #007cba;
+    font-size: 1.4em;
+}
+
+.mlf-session-type {
+    background: #007cba;
+    color: white;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+.mlf-details-content {
+    margin-bottom: 20px;
+}
+
+.mlf-detail-row {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.mlf-detail-row strong {
+    min-width: 120px;
+    color: #333;
+    font-weight: bold;
+}
+
+.mlf-description,
+.mlf-notes {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.mlf-description-content,
+.mlf-notes-content {
+    margin-top: 8px;
+    padding: 15px;
+    background: #f9f9f9;
+    border-left: 4px solid #007cba;
+    border-radius: 0 4px 4px 0;
+    line-height: 1.5;
+}
+
+.mlf-custom-form-info {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.mlf-custom-form-preview {
+    margin-top: 8px;
+    padding: 15px;
+    background: #f0f8ff;
+    border: 1px solid #007cba;
+    border-radius: 4px;
+}
+
+.mlf-custom-form-preview em {
+    font-weight: bold;
+    color: #007cba;
+}
+
+.mlf-custom-form-preview small {
+    color: #666;
+    font-style: italic;
+}
+
+.mlf-details-actions {
+    text-align: center;
+    padding-top: 15px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.mlf-register-from-details {
+    background: #007cba;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.mlf-register-from-details:hover {
+    background: #005a87;
+}
+
+.mlf-status-full {
+    color: #d63638;
+    font-weight: bold;
+    font-size: 16px;
 }
 
 .mlf-info-grid {

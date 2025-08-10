@@ -1,0 +1,1086 @@
+<?php
+/**
+ * The public-facing functionality of the plugin.
+ */
+
+class MLF_Frontend {
+
+    /**
+     * Initialize the class and set its properties.
+     */
+    public function __construct() {
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_public_scripts'));
+        add_action('init', array($this, 'add_shortco    }
+
+    /**
+     * Afficher la vue détaillée d'une session sur une page dédiée.
+     */
+    private function display_session_details_page($session_id) {
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        
+        if (!$session || !$session['is_public']) {
+            return '<p class="mlf-error">' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        }
+        
+        ob_start();
+        ?>
+        <div class="mlf-session-details-page">
+            <div class="mlf-breadcrumb">
+                <a href="<?php echo esc_url(remove_query_arg(array('action', 'session_id'))); ?>" class="mlf-back-btn">
+                    ← <?php _e('Retour aux sessions', 'mlf'); ?>
+                </a>
+            </div>
+            
+            <div class="mlf-session-details-content">
+                <?php if (!empty($session['banner_image_url'])): ?>
+                    <div class="mlf-session-banner">
+                        <img src="<?php echo esc_url($session['banner_image_url']); ?>" alt="<?php echo esc_attr($session['session_name']); ?>" class="mlf-banner-image" />
+                    </div>
+                <?php endif; ?>
+                
+                <h1 class="mlf-session-title"><?php echo esc_html($session['session_name']); ?></h1>
+                
+                <div class="mlf-session-meta-grid">
+                    <div class="mlf-meta-item">
+                        <strong><?php _e('Type de jeu:', 'mlf'); ?></strong>
+                        <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
+                            <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                        </span>
+                    </div>
+                    
+                    <div class="mlf-meta-item">
+                        <strong><?php _e('Date et heure:', 'mlf'); ?></strong>
+                        <?php echo esc_html(date_i18n('d/m/Y', strtotime($session['session_date']))); ?>
+                        <?php _e('à', 'mlf'); ?>
+                        <?php echo esc_html(date('H:i', strtotime($session['session_time']))); ?>
+                    </div>
+                    
+                    <?php if (!empty($session['location'])): ?>
+                        <div class="mlf-meta-item">
+                            <strong><?php _e('Lieu:', 'mlf'); ?></strong>
+                            <?php echo esc_html($session['location']); ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <div class="mlf-meta-item">
+                        <strong><?php _e('Joueurs:', 'mlf'); ?></strong>
+                        <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
+                    </div>
+                    
+                    <div class="mlf-meta-item">
+                        <strong><?php _e('Niveau:', 'mlf'); ?></strong>
+                        <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                    </div>
+                    
+                    <?php if (!empty($session['age_requirement'])): ?>
+                        <div class="mlf-meta-item">
+                            <strong><?php _e('Âge requis:', 'mlf'); ?></strong>
+                            <?php echo esc_html($session['age_requirement']); ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <?php if (!empty($session['description'])): ?>
+                    <div class="mlf-session-description">
+                        <h3><?php _e('Description', 'mlf'); ?></h3>
+                        <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($session['detailed_description'])): ?>
+                    <div class="mlf-session-detailed-description">
+                        <h3><?php _e('Description détaillée', 'mlf'); ?></h3>
+                        <?php echo wp_kses_post(wpautop($session['detailed_description'])); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($session['rules_and_requirements'])): ?>
+                    <div class="mlf-session-rules">
+                        <h3><?php _e('Règles et prérequis', 'mlf'); ?></h3>
+                        <?php echo wp_kses_post(wpautop($session['rules_and_requirements'])); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($session['trigger_warnings'])): ?>
+                    <div class="mlf-trigger-warnings">
+                        <h3><?php _e('⚠️ Trigger warnings', 'mlf'); ?></h3>
+                        <div class="mlf-warnings-content">
+                            <?php echo wp_kses_post(wpautop($session['trigger_warnings'])); ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <div class="mlf-session-actions">
+                    <?php if (intval($session['current_players']) < intval($session['max_players'])): ?>
+                        <a href="<?php echo esc_url(add_query_arg(array('action' => 'register', 'session_id' => $session_id))); ?>" 
+                           class="mlf-btn mlf-btn-primary mlf-btn-large">
+                            <?php _e('S\'inscrire à cette session', 'mlf'); ?>
+                        </a>
+                    <?php else: ?>
+                        <span class="mlf-btn mlf-btn-disabled mlf-btn-large">
+                            <?php _e('Session complète', 'mlf'); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Afficher le formulaire d'inscription sur une page dédiée.
+     */
+    private function display_registration_page($session_id) {
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        
+        if (!$session || !$session['is_public']) {
+            return '<p class="mlf-error">' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        }
+        
+        if (intval($session['current_players']) >= intval($session['max_players'])) {
+            return '<p class="mlf-error">' . __('Cette session est complète.', 'mlf') . '</p>';
+        }
+        
+        // Récupérer le formulaire personnalisé s'il existe
+        $forms_manager = new MLF_Session_Forms_Manager();
+        $custom_form = $forms_manager->get_session_form($session_id);
+        
+        ob_start();
+        ?>
+        <div class="mlf-registration-page">
+            <div class="mlf-breadcrumb">
+                <a href="<?php echo esc_url(remove_query_arg(array('action', 'session_id'))); ?>" class="mlf-back-btn">
+                    ← <?php _e('Retour aux sessions', 'mlf'); ?>
+                </a>
+                <span class="mlf-breadcrumb-separator">/</span>
+                <a href="<?php echo esc_url(add_query_arg(array('action' => 'details', 'session_id' => $session_id), remove_query_arg(array('action')))); ?>">
+                    <?php echo esc_html($session['session_name']); ?>
+                </a>
+            </div>
+            
+            <div class="mlf-registration-content">
+                <h1><?php _e('Inscription', 'mlf'); ?> - <?php echo esc_html($session['session_name']); ?></h1>
+                
+                <div class="mlf-session-summary">
+                    <h3><?php _e('Résumé de la session', 'mlf'); ?></h3>
+                    <div class="mlf-summary-grid">
+                        <div class="mlf-summary-item">
+                            <strong><?php _e('Date:', 'mlf'); ?></strong>
+                            <?php echo esc_html(date_i18n('d/m/Y', strtotime($session['session_date']))); ?>
+                            <?php _e('à', 'mlf'); ?>
+                            <?php echo esc_html(date('H:i', strtotime($session['session_time']))); ?>
+                        </div>
+                        
+                        <?php if (!empty($session['location'])): ?>
+                            <div class="mlf-summary-item">
+                                <strong><?php _e('Lieu:', 'mlf'); ?></strong>
+                                <?php echo esc_html($session['location']); ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="mlf-summary-item">
+                            <strong><?php _e('Places disponibles:', 'mlf'); ?></strong>
+                            <?php echo intval($session['max_players']) - intval($session['current_players']); ?>
+                            / <?php echo intval($session['max_players']); ?>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="mlf-registration-form" class="mlf-form">
+                    <input type="hidden" name="session_id" value="<?php echo esc_attr($session_id); ?>" />
+                    
+                    <div class="mlf-form-section">
+                        <h3><?php _e('Informations personnelles', 'mlf'); ?></h3>
+                        
+                        <div class="mlf-form-group">
+                            <label for="player_name"><?php _e('Nom complet *', 'mlf'); ?></label>
+                            <input type="text" id="player_name" name="player_name" required />
+                        </div>
+                        
+                        <div class="mlf-form-group">
+                            <label for="player_email"><?php _e('Email *', 'mlf'); ?></label>
+                            <input type="email" id="player_email" name="player_email" required />
+                        </div>
+                        
+                        <div class="mlf-form-group">
+                            <label for="player_phone"><?php _e('Téléphone', 'mlf'); ?></label>
+                            <input type="tel" id="player_phone" name="player_phone" />
+                        </div>
+                    </div>
+
+                    <?php if ($custom_form && !empty($custom_form['form_fields'])): ?>
+                        <div class="mlf-form-section">
+                            <h3><?php _e('Informations supplémentaires', 'mlf'); ?></h3>
+                            <?php 
+                            $form_fields = json_decode($custom_form['form_fields'], true);
+                            if ($form_fields) {
+                                foreach ($form_fields as $field) {
+                                    $this->render_form_field($field);
+                                }
+                            }
+                            ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="mlf-form-actions">
+                        <button type="submit" class="mlf-btn mlf-btn-primary mlf-btn-large">
+                            <?php _e('Confirmer l\'inscription', 'mlf'); ?>
+                        </button>
+                        
+                        <a href="<?php echo esc_url(add_query_arg(array('action' => 'details', 'session_id' => $session_id), remove_query_arg(array('action')))); ?>" 
+                           class="mlf-btn mlf-btn-secondary">
+                            <?php _e('Voir les détails', 'mlf'); ?>
+                        </a>
+                    </div>
+                </form>
+                
+                <div id="mlf-registration-result" style="display: none;"></div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Display registration form.
+     */
+    public function display_registration_form($atts) {;
+        add_action('wp_ajax_mlf_register_for_session', array($this, 'handle_session_registration'));
+        add_action('wp_ajax_nopriv_mlf_register_for_session', array($this, 'handle_session_registration'));
+        add_action('wp_ajax_mlf_get_session_details', array($this, 'handle_get_session_details'));
+        add_action('wp_ajax_nopriv_mlf_get_session_details', array($this, 'handle_get_session_details'));
+        add_action('wp_ajax_mlf_get_registration_form', array($this, 'handle_get_registration_form'));
+        add_action('wp_ajax_nopriv_mlf_get_registration_form', array($this, 'handle_get_registration_form'));
+    }
+
+    /**
+     * Register shortcodes.
+     */
+    public function add_shortcodes() {
+        add_shortcode('mlf_sessions_list', array($this, 'display_sessions_list'));
+        add_shortcode('mlf_session_details', array($this, 'display_session_details'));
+        add_shortcode('mlf_registration_form', array($this, 'display_registration_form'));
+    }
+
+    /**
+     * Enqueue public-facing stylesheets and scripts.
+     */
+    public function enqueue_public_scripts() {
+        wp_enqueue_style('mlf-public-css', plugin_dir_url(dirname(__FILE__)) . 'public/css/mlf-public.css', array(), '1.0.0');
+        wp_enqueue_script('mlf-public-js', plugin_dir_url(dirname(__FILE__)) . 'public/js/mlf-public.js', array('jquery'), '1.0.0', true);
+        
+        wp_localize_script('mlf-public-js', 'mlf_ajax', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('mlf_public_nonce'),
+        ));
+    }
+
+    /**
+     * Display list of available sessions.
+     */
+    public function display_sessions_list($atts) {
+        // Gérer les différentes vues selon les paramètres URL
+        $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+        $session_id = isset($_GET['session_id']) ? intval($_GET['session_id']) : 0;
+        
+        switch ($action) {
+            case 'details':
+                if ($session_id) {
+                    return $this->display_session_details_page($session_id);
+                }
+                break;
+                
+            case 'register':
+                if ($session_id) {
+                    return $this->display_registration_page($session_id);
+                }
+                break;
+        }
+        
+        // Vue par défaut : liste des sessions
+        $atts = shortcode_atts(array(
+            'limit' => 10,
+            'game_type' => '',
+            'upcoming_only' => true
+        ), $atts);
+
+        $filters = array(
+            'limit' => intval($atts['limit']),
+            'is_public' => 1
+        );
+
+        if ($atts['upcoming_only']) {
+            $filters['date_from'] = date('Y-m-d');
+        }
+
+        if (!empty($atts['game_type'])) {
+            $filters['game_type'] = sanitize_text_field($atts['game_type']);
+        }
+
+        $sessions = MLF_Database_Manager::get_game_sessions($filters);
+
+        ob_start();
+        ?>
+        <div class="mlf-sessions-list">
+            <h2><?php _e('Sessions de jeu disponibles', 'mlf'); ?></h2>
+            
+            <div class="mlf-filters">
+                <form method="get" class="mlf-filter-form">
+                    <select name="filter_game_type" onchange="this.form.submit()">
+                        <option value=""><?php _e('Tous les types de jeux', 'mlf'); ?></option>
+                        <option value="jdr" <?php selected($_GET['filter_game_type'] ?? '', 'jdr'); ?>><?php _e('JDR', 'mlf'); ?></option>
+                        <option value="murder" <?php selected($_GET['filter_game_type'] ?? '', 'murder'); ?>><?php _e('Murder', 'mlf'); ?></option>
+                        <option value="jeu_de_societe" <?php selected($_GET['filter_game_type'] ?? '', 'jeu_de_societe'); ?>><?php _e('Jeu de société', 'mlf'); ?></option>
+                    </select>
+                </form>
+            </div>
+
+            <?php if (empty($sessions)): ?>
+                <p class="mlf-no-sessions"><?php _e('Aucune session disponible pour le moment.', 'mlf'); ?></p>
+            <?php else: ?>
+                <div class="mlf-sessions-grid">
+                    <?php foreach ($sessions as $session): ?>
+                        <div class="mlf-session-card" data-session-id="<?php echo esc_attr($session['id']); ?>" 
+                             <?php if (!empty($session['background_image_url'])): ?>
+                             style="background-image: linear-gradient(rgba(255,255,255,0.9), rgba(255,255,255,0.9)), url('<?php echo esc_url($session['background_image_url']); ?>'); background-size: cover; background-position: center;"
+                             <?php endif; ?>>
+                             
+                            <?php if (!empty($session['banner_image_url'])): ?>
+                                <div class="mlf-session-banner">
+                                    <img src="<?php echo esc_url($session['banner_image_url']); ?>" alt="<?php echo esc_attr($session['session_name']); ?>" class="mlf-banner-image" />
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="mlf-session-header">
+                                <h3 class="mlf-session-title"><?php echo esc_html($session['session_name']); ?></h3>
+                                <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
+                                    <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                                </span>
+                            </div>
+                            
+                            <div class="mlf-session-meta">
+                                <div class="mlf-session-date">
+                                    <strong><?php _e('Date:', 'mlf'); ?></strong> 
+                                    <?php echo esc_html(date_i18n('d/m/Y', strtotime($session['session_date']))); ?>
+                                    <?php _e('à', 'mlf'); ?>
+                                    <?php echo esc_html(date('H:i', strtotime($session['session_time']))); ?>
+                                </div>
+                                
+                                <?php if (!empty($session['location'])): ?>
+                                    <div class="mlf-session-location">
+                                        <strong><?php _e('Lieu:', 'mlf'); ?></strong> 
+                                        <?php echo esc_html($session['location']); ?>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <div class="mlf-session-players">
+                                    <strong><?php _e('Joueurs:', 'mlf'); ?></strong> 
+                                    <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
+                                </div>
+                                
+                                <div class="mlf-session-difficulty">
+                                    <strong><?php _e('Niveau:', 'mlf'); ?></strong> 
+                                    <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                                </div>
+                            </div>
+
+                            <?php if (!empty($session['description'])): ?>
+                                <div class="mlf-session-description">
+                                    <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($session['trigger_warnings'])): ?>
+                                <div class="mlf-trigger-warnings">
+                                    <strong><?php _e('⚠️ Trigger warnings:', 'mlf'); ?></strong>
+                                    <div class="mlf-warnings-content">
+                                        <?php echo wp_kses_post(wpautop($session['trigger_warnings'])); ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="mlf-session-actions">
+                                <?php if (intval($session['current_players']) < intval($session['max_players'])): ?>
+                                    <button class="mlf-btn mlf-btn-primary mlf-register-btn" data-session-id="<?php echo esc_attr($session['id']); ?>">
+                                        <?php _e('S\'inscrire', 'mlf'); ?>
+                                    </button>
+                                <?php else: ?>
+                                    <span class="mlf-btn mlf-btn-disabled"><?php _e('Complet', 'mlf'); ?></span>
+                                <?php endif; ?>
+                                
+                                <button class="mlf-btn mlf-btn-secondary mlf-details-btn" data-session-id="<?php echo esc_attr($session['id']); ?>">
+                                    <?php _e('Détails', 'mlf'); ?>
+                                </button>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Display detailed session information.
+     */
+    public function display_session_details($atts) {
+        $atts = shortcode_atts(array(
+            'session_id' => 0
+        ), $atts);
+
+        $session_id = intval($atts['session_id']);
+        if (!$session_id) {
+            return '<p>' . __('ID de session invalide.', 'mlf') . '</p>';
+        }
+
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        if (!$session || !$session['is_public']) {
+            return '<p>' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        }
+
+        ob_start();
+        ?>
+        <div class="mlf-session-details" 
+             <?php if (!empty($session['background_image_url'])): ?>
+             style="background-image: linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)), url('<?php echo esc_url($session['background_image_url']); ?>'); background-size: cover; background-position: center; background-attachment: fixed;"
+             <?php endif; ?>>
+             
+            <?php if (!empty($session['banner_image_url'])): ?>
+                <div class="mlf-session-banner-large">
+                    <img src="<?php echo esc_url($session['banner_image_url']); ?>" alt="<?php echo esc_attr($session['session_name']); ?>" class="mlf-banner-image-large" />
+                </div>
+            <?php endif; ?>
+            
+            <h2><?php echo esc_html($session['session_name']); ?></h2>
+            
+            <div class="mlf-session-info">
+                <div class="mlf-info-grid">
+                    <div class="mlf-info-item">
+                        <strong><?php _e('Type de jeu:', 'mlf'); ?></strong>
+                        <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
+                            <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                        </span>
+                    </div>
+                    
+                    <div class="mlf-info-item">
+                        <strong><?php _e('Date et heure:', 'mlf'); ?></strong>
+                        <?php echo esc_html(date_i18n('d/m/Y', strtotime($session['session_date']))); ?>
+                        <?php _e('à', 'mlf'); ?>
+                        <?php echo esc_html(date('H:i', strtotime($session['session_time']))); ?>
+                    </div>
+                    
+                    <div class="mlf-info-item">
+                        <strong><?php _e('Durée:', 'mlf'); ?></strong>
+                        <?php echo intval($session['duration_minutes']); ?> <?php _e('minutes', 'mlf'); ?>
+                    </div>
+                    
+                    <?php if (!empty($session['location'])): ?>
+                        <div class="mlf-info-item">
+                            <strong><?php _e('Lieu:', 'mlf'); ?></strong>
+                            <?php echo esc_html($session['location']); ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <div class="mlf-info-item">
+                        <strong><?php _e('Niveau:', 'mlf'); ?></strong>
+                        <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                    </div>
+                    
+                    <div class="mlf-info-item">
+                        <strong><?php _e('Joueurs:', 'mlf'); ?></strong>
+                        <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
+                    </div>
+                    
+                    <?php if (!empty($session['game_master_name'])): ?>
+                        <div class="mlf-info-item">
+                            <strong><?php _e('Maître de jeu:', 'mlf'); ?></strong>
+                            <?php echo esc_html($session['game_master_name']); ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <?php if (!empty($session['description'])): ?>
+                <div class="mlf-section">
+                    <h3><?php _e('Description', 'mlf'); ?></h3>
+                    <div class="mlf-content">
+                        <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($session['synopsis'])): ?>
+                <div class="mlf-section">
+                    <h3><?php _e('Synopsis', 'mlf'); ?></h3>
+                    <div class="mlf-content">
+                        <?php echo wp_kses_post(wpautop($session['synopsis'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($session['trigger_warnings'])): ?>
+                <div class="mlf-section mlf-warnings-section">
+                    <h3><?php _e('⚠️ Trigger warnings', 'mlf'); ?></h3>
+                    <div class="mlf-content mlf-warnings">
+                        <?php echo wp_kses_post(wpautop($session['trigger_warnings'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($session['safety_tools'])): ?>
+                <div class="mlf-section">
+                    <h3><?php _e('Outils de sécurité', 'mlf'); ?></h3>
+                    <div class="mlf-content">
+                        <?php echo wp_kses_post(wpautop($session['safety_tools'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($session['prerequisites'])): ?>
+                <div class="mlf-section">
+                    <h3><?php _e('Prérequis', 'mlf'); ?></h3>
+                    <div class="mlf-content">
+                        <?php echo wp_kses_post(wpautop($session['prerequisites'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($session['additional_info'])): ?>
+                <div class="mlf-section">
+                    <h3><?php _e('Informations additionnelles', 'mlf'); ?></h3>
+                    <div class="mlf-content">
+                        <?php echo wp_kses_post(wpautop($session['additional_info'])); ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Display registration form for a session.
+     */
+    public function display_registration_form($atts) {
+        $atts = shortcode_atts(array(
+            'session_id' => 0
+        ), $atts);
+
+        $session_id = intval($atts['session_id']);
+        if (!$session_id) {
+            return '<p>' . __('ID de session invalide.', 'mlf') . '</p>';
+        }
+
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        if (!$session || !$session['is_public']) {
+            return '<p>' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        }
+
+        // Récupérer le formulaire spécifique à la session
+        if (!class_exists('MLF_Session_Forms_Manager')) {
+            require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-mlf-session-forms-manager.php';
+        }
+        $session_forms_manager = new MLF_Session_Forms_Manager();
+        $custom_form = $session_forms_manager->get_session_form($session_id);
+
+        ob_start();
+        ?>
+        <form id="mlf-registration-form" class="mlf-form" data-session-id="<?php echo esc_attr($session_id); ?>">
+            <?php wp_nonce_field('mlf_register_session', 'mlf_registration_nonce'); ?>
+            
+            <h3><?php echo esc_html($session['session_name']); ?></h3>
+            
+            <!-- Champs de base obligatoires -->
+            <div class="mlf-form-section">
+                <h4><?php _e('Informations personnelles', 'mlf'); ?></h4>
+                
+                <div class="mlf-form-group">
+                    <label for="player_name"><?php _e('Nom complet *', 'mlf'); ?></label>
+                    <input type="text" id="player_name" name="player_name" required />
+                </div>
+
+                <div class="mlf-form-group">
+                    <label for="player_email"><?php _e('Email *', 'mlf'); ?></label>
+                    <input type="email" id="player_email" name="player_email" required />
+                </div>
+
+                <div class="mlf-form-group">
+                    <label for="player_phone"><?php _e('Téléphone', 'mlf'); ?></label>
+                    <input type="tel" id="player_phone" name="player_phone" />
+                </div>
+
+                <div class="mlf-form-group">
+                    <label for="experience_level"><?php _e('Niveau d\'expérience', 'mlf'); ?></label>
+                    <select id="experience_level" name="experience_level">
+                        <option value="debutant"><?php _e('Débutant', 'mlf'); ?></option>
+                        <option value="intermediaire"><?php _e('Intermédiaire', 'mlf'); ?></option>
+                        <option value="avance"><?php _e('Avancé', 'mlf'); ?></option>
+                        <option value="expert"><?php _e('Expert', 'mlf'); ?></option>
+                    </select>
+                </div>
+            </div>
+
+            <?php if ($custom_form && $custom_form['is_active']): ?>
+                <!-- Formulaire personnalisé spécifique à la session -->
+                <div class="mlf-form-section mlf-custom-form-section">
+                    <h4><?php echo esc_html($custom_form['form_title']); ?></h4>
+                    
+                    <?php if (!empty($custom_form['form_description'])): ?>
+                        <p class="mlf-form-description"><?php echo esc_html($custom_form['form_description']); ?></p>
+                    <?php endif; ?>
+
+                    <?php
+                    $form_fields = json_decode($custom_form['form_fields'], true);
+                    if (!empty($form_fields)):
+                        foreach ($form_fields as $index => $field):
+                            $field_name = 'custom_field_' . $index;
+                            $field_id = 'custom_field_' . $index;
+                    ?>
+                        <div class="mlf-form-group mlf-custom-field">
+                            <label for="<?php echo esc_attr($field_id); ?>">
+                                <?php echo esc_html($field['label']); ?>
+                                <?php if (!empty($field['required'])): ?>
+                                    <span class="required">*</span>
+                                <?php endif; ?>
+                            </label>
+
+                            <?php switch ($field['type']): 
+                                case 'text': ?>
+                                    <input type="text" 
+                                           id="<?php echo esc_attr($field_id); ?>" 
+                                           name="<?php echo esc_attr($field_name); ?>"
+                                           <?php if (!empty($field['required'])): ?>required<?php endif; ?> />
+                                    <?php break;
+
+                                case 'textarea': ?>
+                                    <textarea id="<?php echo esc_attr($field_id); ?>" 
+                                              name="<?php echo esc_attr($field_name); ?>"
+                                              rows="3"
+                                              <?php if (!empty($field['required'])): ?>required<?php endif; ?>></textarea>
+                                    <?php break;
+
+                                case 'select': ?>
+                                    <select id="<?php echo esc_attr($field_id); ?>" 
+                                            name="<?php echo esc_attr($field_name); ?>"
+                                            <?php if (!empty($field['required'])): ?>required<?php endif; ?>>
+                                        <option value=""><?php _e('Sélectionnez...', 'mlf'); ?></option>
+                                        <?php if (!empty($field['options']) && is_array($field['options'])): ?>
+                                            <?php foreach ($field['options'] as $option): ?>
+                                                <option value="<?php echo esc_attr($option); ?>"><?php echo esc_html($option); ?></option>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </select>
+                                    <?php break;
+
+                                case 'checkbox': ?>
+                                    <label class="mlf-checkbox-label">
+                                        <input type="checkbox" 
+                                               id="<?php echo esc_attr($field_id); ?>" 
+                                               name="<?php echo esc_attr($field_name); ?>"
+                                               value="1"
+                                               <?php if (!empty($field['required'])): ?>required<?php endif; ?> />
+                                        <?php echo esc_html($field['label']); ?>
+                                    </label>
+                                    <?php break;
+
+                                case 'email': ?>
+                                    <input type="email" 
+                                           id="<?php echo esc_attr($field_id); ?>" 
+                                           name="<?php echo esc_attr($field_name); ?>"
+                                           <?php if (!empty($field['required'])): ?>required<?php endif; ?> />
+                                    <?php break;
+
+                                case 'number': ?>
+                                    <input type="number" 
+                                           id="<?php echo esc_attr($field_id); ?>" 
+                                           name="<?php echo esc_attr($field_name); ?>"
+                                           <?php if (!empty($field['required'])): ?>required<?php endif; ?> />
+                                    <?php break;
+
+                                default: ?>
+                                    <input type="text" 
+                                           id="<?php echo esc_attr($field_id); ?>" 
+                                           name="<?php echo esc_attr($field_name); ?>"
+                                           <?php if (!empty($field['required'])): ?>required<?php endif; ?> />
+                            <?php endswitch; ?>
+                        </div>
+                    <?php 
+                        endforeach;
+                    endif;
+                    ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($session['game_type'] === 'jdr'): ?>
+                <!-- Champs spécifiques au JDR -->
+                <div class="mlf-form-section">
+                    <h4><?php _e('Informations personnage (JDR)', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="character_name"><?php _e('Nom du personnage', 'mlf'); ?></label>
+                        <input type="text" id="character_name" name="character_name" />
+                    </div>
+                    
+                    <div class="mlf-form-group">
+                        <label for="character_class"><?php _e('Classe/Type de personnage', 'mlf'); ?></label>
+                        <input type="text" id="character_class" name="character_class" />
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Champs généraux -->
+            <div class="mlf-form-section">
+                <h4><?php _e('Informations complémentaires', 'mlf'); ?></h4>
+                
+                <div class="mlf-form-group">
+                    <label for="special_requests"><?php _e('Demandes spéciales', 'mlf'); ?></label>
+                    <textarea id="special_requests" name="special_requests" rows="3"></textarea>
+                </div>
+                
+                <div class="mlf-form-group">
+                    <label for="dietary_restrictions"><?php _e('Restrictions alimentaires', 'mlf'); ?></label>
+                    <textarea id="dietary_restrictions" name="dietary_restrictions" rows="2"></textarea>
+                </div>
+            </div>
+            
+            <div class="mlf-form-actions">
+                <button type="submit" class="mlf-btn mlf-btn-primary">
+                    <?php _e('S\'inscrire', 'mlf'); ?>
+                </button>
+                <span class="mlf-loading" style="display: none;"><?php _e('Inscription en cours...', 'mlf'); ?></span>
+            </div>
+            
+            <div id="mlf-registration-message" class="mlf-message" style="display: none;"></div>
+        </form>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Handle session registration via AJAX.
+     */
+    public function handle_session_registration() {
+        if (!wp_verify_nonce($_POST['mlf_registration_nonce'], 'mlf_register_session')) {
+            wp_send_json_error(array('message' => 'Security check failed'));
+        }
+
+        $session_id = intval($_POST['session_id']);
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        
+        if (!$session || !$session['is_public']) {
+            wp_send_json_error(array('message' => 'Session non trouvée ou non publique'));
+        }
+
+        // Check if session is full
+        if (intval($session['current_players']) >= intval($session['max_players'])) {
+            wp_send_json_error(array('message' => 'La session est complète'));
+        }
+
+        // Check if user is already registered
+        $existing_registration = MLF_Database_Manager::get_player_registration_by_email(
+            $session_id, 
+            sanitize_email($_POST['player_email'])
+        );
+        
+        if ($existing_registration) {
+            wp_send_json_error(array('message' => 'Vous êtes déjà inscrit à cette session'));
+        }
+
+        $registration_data = array(
+            'session_id' => $session_id,
+            'player_name' => sanitize_text_field($_POST['player_name']),
+            'player_email' => sanitize_email($_POST['player_email']),
+            'player_phone' => sanitize_text_field($_POST['player_phone']),
+            'experience_level' => sanitize_text_field($_POST['experience_level']),
+            'character_name' => sanitize_text_field($_POST['character_name']),
+            'character_class' => sanitize_text_field($_POST['character_class']),
+            'special_requests' => sanitize_textarea_field($_POST['special_requests']),
+            'dietary_restrictions' => sanitize_textarea_field($_POST['dietary_restrictions']),
+            'registration_status' => $session['requires_approval'] ? 'en_attente' : 'confirme'
+        );
+
+        // Add user ID if logged in
+        if (is_user_logged_in()) {
+            $registration_data['user_id'] = get_current_user_id();
+        }
+
+        $registration_id = MLF_Database_Manager::create_player_registration($registration_data);
+
+        if ($registration_id) {
+            // Update session player count if auto-confirmed
+            if (!$session['requires_approval']) {
+                MLF_Database_Manager::update_session_player_count($session_id);
+            }
+
+            // Traiter les champs personnalisés spécifiques à la session
+            if (!class_exists('MLF_Session_Forms_Manager')) {
+                require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-mlf-session-forms-manager.php';
+            }
+            
+            $session_forms_manager = new MLF_Session_Forms_Manager();
+            $custom_form = $session_forms_manager->get_session_form($session_id);
+            
+            if ($custom_form && $custom_form['is_active']) {
+                $form_fields = json_decode($custom_form['form_fields'], true);
+                $custom_responses = array();
+                
+                if (!empty($form_fields)) {
+                    foreach ($form_fields as $index => $field) {
+                        $field_name = 'custom_field_' . $index;
+                        
+                        if (isset($_POST[$field_name])) {
+                            $field_value = '';
+                            
+                            // Valider selon le type de champ
+                            switch ($field['type']) {
+                                case 'email':
+                                    $field_value = sanitize_email($_POST[$field_name]);
+                                    break;
+                                case 'textarea':
+                                    $field_value = sanitize_textarea_field($_POST[$field_name]);
+                                    break;
+                                case 'number':
+                                    $field_value = intval($_POST[$field_name]);
+                                    break;
+                                case 'checkbox':
+                                    $field_value = !empty($_POST[$field_name]) ? '1' : '0';
+                                    break;
+                                default:
+                                    $field_value = sanitize_text_field($_POST[$field_name]);
+                                    break;
+                            }
+                            
+                            // Vérifier les champs obligatoires
+                            if (!empty($field['required']) && empty($field_value)) {
+                                wp_send_json_error(array('message' => sprintf('Le champ "%s" est obligatoire.', $field['label'])));
+                            }
+                            
+                            $custom_responses[] = array(
+                                'field_label' => $field['label'],
+                                'field_type' => $field['type'],
+                                'field_value' => $field_value
+                            );
+                        }
+                    }
+                }
+                
+                // Sauvegarder les réponses du formulaire personnalisé
+                if (!empty($custom_responses)) {
+                    $session_forms_manager->save_form_response(
+                        $session_id,
+                        $registration_id,
+                        $custom_responses
+                    );
+                }
+            }
+
+            $message = $session['requires_approval'] 
+                ? 'Inscription enregistrée ! Elle sera confirmée par l\'organisateur.'
+                : 'Inscription confirmée !';
+                
+            wp_send_json_success(array(
+                'registration_id' => $registration_id,
+                'message' => $message
+            ));
+        } else {
+            wp_send_json_error(array('message' => 'Erreur lors de l\'inscription'));
+        }
+    }
+
+    /**
+     * Get game type label.
+     */
+    private function get_game_type_label($type) {
+        $labels = array(
+            'jdr' => 'JDR',
+            'murder' => 'Murder',
+            'jeu_de_societe' => 'Jeu de société'
+        );
+        
+        return isset($labels[$type]) ? $labels[$type] : $type;
+    }
+
+    /**
+     * Get difficulty level label.
+     */
+    private function get_difficulty_label($level) {
+        $labels = array(
+            'debutant' => 'Débutant',
+            'intermediaire' => 'Intermédiaire',
+            'avance' => 'Avancé',
+            'expert' => 'Expert'
+        );
+        
+        return isset($labels[$level]) ? $labels[$level] : $level;
+    }
+
+    /**
+     * Handle AJAX request for registration form.
+     */
+    public function handle_get_registration_form() {
+        // Vérifier le nonce pour la sécurité
+        if (!wp_verify_nonce($_POST['nonce'], 'mlf_public_nonce')) {
+            wp_send_json_error(array('message' => 'Erreur de sécurité'));
+        }
+
+        $session_id = intval($_POST['session_id']);
+        if (!$session_id) {
+            wp_send_json_error(array('message' => 'ID de session invalide'));
+        }
+
+        // Récupérer les informations de la session
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        
+        if (!$session || !$session['is_public']) {
+            wp_send_json_error(array('message' => 'Session non trouvée ou non publique'));
+        }
+
+        // Vérifier si la session n'est pas complète
+        if (intval($session['current_players']) >= intval($session['max_players'])) {
+            wp_send_json_error(array('message' => 'Cette session est complète'));
+        }
+
+        // Générer le formulaire d'inscription via la méthode existante
+        $form_html = $this->display_registration_form(array('session_id' => $session_id));
+
+        wp_send_json_success(array(
+            'form_html' => $form_html
+        ));
+    }
+
+    /**
+     * Handle AJAX request for session details.
+     */
+    public function handle_get_session_details() {
+        // Vérifier le nonce pour la sécurité
+        if (!wp_verify_nonce($_POST['nonce'], 'mlf_public_nonce')) {
+            wp_send_json_error(array('message' => 'Erreur de sécurité'));
+        }
+
+        $session_id = intval($_POST['session_id']);
+        if (!$session_id) {
+            wp_send_json_error(array('message' => 'ID de session invalide'));
+        }
+
+        // Récupérer les détails de la session
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        
+        if (!$session || !$session['is_public']) {
+            wp_send_json_error(array('message' => 'Session non trouvée ou non publique'));
+        }
+
+        // Générer le HTML des détails
+        ob_start();
+        ?>
+        <div class="mlf-session-details">
+            <div class="mlf-details-header">
+                <h3><?php echo esc_html($session['session_name']); ?></h3>
+                <span class="mlf-session-type"><?php echo esc_html($this->get_game_type_label($session['game_type'])); ?></span>
+            </div>
+            
+            <div class="mlf-details-content">
+                <div class="mlf-detail-row">
+                    <strong>📅 Date :</strong> 
+                    <?php echo esc_html(date('d/m/Y', strtotime($session['session_date']))); ?>
+                </div>
+                
+                <div class="mlf-detail-row">
+                    <strong>🕐 Heure :</strong> 
+                    <?php echo esc_html(date('H:i', strtotime($session['session_time']))); ?>
+                </div>
+                
+                <div class="mlf-detail-row">
+                    <strong>⏱️ Durée :</strong> 
+                    <?php echo esc_html($session['duration_hours']); ?> heure(s)
+                </div>
+                
+                <div class="mlf-detail-row">
+                    <strong>👥 Joueurs :</strong> 
+                    <?php echo esc_html($session['current_players']); ?>/<?php echo esc_html($session['max_players']); ?>
+                    <?php if ($session['min_players']): ?>
+                        (minimum <?php echo esc_html($session['min_players']); ?>)
+                    <?php endif; ?>
+                </div>
+                
+                <?php if ($session['difficulty_level']): ?>
+                <div class="mlf-detail-row">
+                    <strong>🎯 Difficulté :</strong> 
+                    <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                </div>
+                <?php endif; ?>
+                
+                <?php if ($session['location']): ?>
+                <div class="mlf-detail-row">
+                    <strong>📍 Lieu :</strong> 
+                    <?php echo esc_html($session['location']); ?>
+                </div>
+                <?php endif; ?>
+                
+                <?php if ($session['price'] > 0): ?>
+                <div class="mlf-detail-row">
+                    <strong>💰 Prix :</strong> 
+                    <?php echo esc_html($session['price']); ?> €
+                </div>
+                <?php endif; ?>
+                
+                <?php if (!empty($session['session_description'])): ?>
+                <div class="mlf-detail-row mlf-description">
+                    <strong>📝 Description :</strong>
+                    <div class="mlf-description-content">
+                        <?php echo wp_kses_post(nl2br($session['session_description'])); ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <?php if (!empty($session['game_master_notes'])): ?>
+                <div class="mlf-detail-row mlf-notes">
+                    <strong>ℹ️ Notes du maître de jeu :</strong>
+                    <div class="mlf-notes-content">
+                        <?php echo wp_kses_post(nl2br($session['game_master_notes'])); ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <?php 
+                // Vérifier s'il y a un formulaire personnalisé pour cette session
+                if (!class_exists('MLF_Session_Forms_Manager')) {
+                    require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-mlf-session-forms-manager.php';
+                }
+                $session_forms_manager = new MLF_Session_Forms_Manager();
+                $custom_form = $session_forms_manager->get_session_form($session_id);
+                
+                if ($custom_form && $custom_form['is_active']): ?>
+                <div class="mlf-detail-row mlf-custom-form-info">
+                    <strong>📋 Formulaire personnalisé :</strong>
+                    <div class="mlf-custom-form-preview">
+                        <em><?php echo esc_html($custom_form['form_title']); ?></em>
+                        <?php if (!empty($custom_form['form_description'])): ?>
+                            <p><?php echo esc_html($custom_form['form_description']); ?></p>
+                        <?php endif; ?>
+                        <small>Ce formulaire sera à remplir lors de l'inscription.</small>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <div class="mlf-details-actions">
+                <?php if (intval($session['current_players']) < intval($session['max_players'])): ?>
+                    <button class="mlf-btn mlf-btn-primary mlf-register-from-details" 
+                            data-session-id="<?php echo esc_attr($session_id); ?>">
+                        S'inscrire à cette session
+                    </button>
+                <?php else: ?>
+                    <span class="mlf-status-full">Session complète</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+        $details_html = ob_get_clean();
+
+        wp_send_json_success(array(
+            'details_html' => $details_html
+        ));
+    }
+}

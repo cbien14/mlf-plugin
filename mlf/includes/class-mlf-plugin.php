@@ -27,13 +27,19 @@ class MLF_Plugin {
      * Run the plugin.
      */
     public function run() {
+        // Initialize components immediately
+        $this->initialize_components();
+    }
+    
+    /**
+     * Initialize all plugin components.
+     */
+    public function initialize_components() {
         // Initialize game events functionality
         $game_events = new MLF_Game_Events();
 
-        // Initialize admin functionality
-        if (is_admin()) {
-            $admin = new MLF_Admin();
-        }
+        // Initialize admin functionality (classe s'auto-enregistre)
+        $admin = new MLF_Admin();
 
         // Initialize public functionality
         $public = new MLF_Public();

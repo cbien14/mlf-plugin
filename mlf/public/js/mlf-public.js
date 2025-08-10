@@ -5,7 +5,10 @@ jQuery(document).ready(function($) {
         e.preventDefault();
         
         var sessionId = $(this).data('session-id');
-        showRegistrationModal(sessionId);
+        var currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('action', 'register');
+        currentUrl.searchParams.set('session_id', sessionId);
+        window.location.href = currentUrl.toString();
     });
     
     // Handle details button clicks
@@ -13,7 +16,21 @@ jQuery(document).ready(function($) {
         e.preventDefault();
         
         var sessionId = $(this).data('session-id');
-        showDetailsModal(sessionId);
+        var currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('action', 'details');
+        currentUrl.searchParams.set('session_id', sessionId);
+        window.location.href = currentUrl.toString();
+    });
+
+    // Handle registration from details page
+    $(document).on('click', '.mlf-register-from-details', function(e) {
+        e.preventDefault();
+        
+        var sessionId = $(this).data('session-id');
+        var currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('action', 'register');
+        currentUrl.searchParams.set('session_id', sessionId);
+        window.location.href = currentUrl.toString();
     });
     
     // Handle modal close buttons
@@ -54,8 +71,20 @@ jQuery(document).ready(function($) {
             character_class: $('#character_class').val(),
             special_requests: $('#special_requests').val(),
             dietary_restrictions: $('#dietary_restrictions').val(),
-            mlf_registration_nonce: $('#mlf_registration_nonce').val()
+            mlf_registration_nonce: $form.find('[name="mlf_registration_nonce"]').val()
         };
+
+        // Ajouter tous les champs personnalisés dynamiquement
+        $form.find('[name^="custom_field_"]').each(function() {
+            var $field = $(this);
+            var fieldName = $field.attr('name');
+            
+            if ($field.attr('type') === 'checkbox') {
+                formData[fieldName] = $field.is(':checked') ? $field.val() : '';
+            } else {
+                formData[fieldName] = $field.val();
+            }
+        });
         
         // Send AJAX request
         $.ajax({

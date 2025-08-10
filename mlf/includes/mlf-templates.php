@@ -21,13 +21,13 @@ function mlf_display_game_event($post_id = null) {
     <div class="mlf-game-event mlf-event-<?php echo $post_id; ?>">
         <div class="mlf-game-event-header">
             <h2 class="mlf-game-event-title"><?php echo esc_html($post->post_title); ?></h2>
-            <?php if ($event_details['game_type']): ?>
-                <span class="mlf-game-event-type"><?php echo esc_html(ucwords(str_replace('_', ' ', $event_details['game_type']))); ?></span>
+            <?php if (!empty($event_details['game_type'])): ?>
+                <span class="mlf-game-event-type"><?php echo esc_html(ucwords(mlf_safe_str_replace('_', ' ', $event_details['game_type']))); ?></span>
             <?php endif; ?>
         </div>
         
         <div class="mlf-game-event-details">
-            <?php if ($event_details['event_date']): ?>
+            <?php if (!empty($event_details['event_date'])): ?>
                 <div class="mlf-event-detail">
                     <span class="mlf-event-detail-icon">📅</span>
                     <span class="mlf-event-detail-label"><?php _e('Date:', 'mlf'); ?></span>
@@ -35,7 +35,7 @@ function mlf_display_game_event($post_id = null) {
                 </div>
             <?php endif; ?>
             
-            <?php if ($event_details['event_time']): ?>
+            <?php if (!empty($event_details['event_time'])): ?>
                 <div class="mlf-event-detail">
                     <span class="mlf-event-detail-icon">🕐</span>
                     <span class="mlf-event-detail-label"><?php _e('Time:', 'mlf'); ?></span>
@@ -43,7 +43,7 @@ function mlf_display_game_event($post_id = null) {
                 </div>
             <?php endif; ?>
             
-            <?php if ($event_details['location']): ?>
+            <?php if (!empty($event_details['location'])): ?>
                 <div class="mlf-event-detail">
                     <span class="mlf-event-detail-icon">📍</span>
                     <span class="mlf-event-detail-label"><?php _e('Location:', 'mlf'); ?></span>
@@ -51,7 +51,7 @@ function mlf_display_game_event($post_id = null) {
                 </div>
             <?php endif; ?>
             
-            <?php if ($event_details['difficulty_level']): ?>
+            <?php if (!empty($event_details['difficulty_level'])): ?>
                 <div class="mlf-event-detail">
                     <span class="mlf-event-detail-icon">⭐</span>
                     <span class="mlf-event-detail-label"><?php _e('Difficulty:', 'mlf'); ?></span>
@@ -62,7 +62,7 @@ function mlf_display_game_event($post_id = null) {
             <?php endif; ?>
         </div>
         
-        <?php if ($post->post_content): ?>
+        <?php if (!empty($post->post_content)): ?>
             <div class="mlf-event-description">
                 <?php echo wp_kses_post($post->post_content); ?>
             </div>
@@ -74,7 +74,7 @@ function mlf_display_game_event($post_id = null) {
         $spots_available = $max_players - $registered_count;
         $registration_open = true;
         
-        if ($event_details['registration_deadline']) {
+        if (!empty($event_details['registration_deadline'])) {
             $deadline = strtotime($event_details['registration_deadline']);
             $registration_open = (time() < $deadline);
         }
@@ -225,15 +225,15 @@ function mlf_display_game_event_card($post_id) {
             </h3>
             
             <div class="mlf-event-card-meta">
-                <?php if ($event_details['event_date']): ?>
+                <?php if (!empty($event_details['event_date'])): ?>
                     <span>📅 <?php echo esc_html(date('M j, Y', strtotime($event_details['event_date']))); ?></span>
                 <?php endif; ?>
                 
-                <?php if ($event_details['event_time']): ?>
+                <?php if (!empty($event_details['event_time'])): ?>
                     <span>🕐 <?php echo esc_html(date('g:i A', strtotime($event_details['event_time']))); ?></span>
                 <?php endif; ?>
                 
-                <?php if ($event_details['location']): ?>
+                <?php if (!empty($event_details['location'])): ?>
                     <span>📍 <?php echo esc_html($event_details['location']); ?></span>
                 <?php endif; ?>
                 

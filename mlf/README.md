@@ -1,25 +1,33 @@
-# mlf-plugin
+# Plugin MLF - Sessions de jeu
 
-## Description
-The **mlf-plugin** is a WordPress plugin designed to enhance the functionality of your WordPress site. This plugin provides various features that can be customized to fit your needs.
+Plugin WordPress pour gérer les sessions de jeu et les inscriptions des joueurs.
+
+## Fonctionnalités
+
+- Gestion des sessions de jeu avec différents types (murder, escape game, etc.)
+- Système d'inscription des joueurs avec confirmation
+- Interface d'administration complète
+- Gestion des images pour les sessions
+- Formulaires personnalisés spécifiques à chaque session de jeu
+- Collecte des réponses des joueurs aux formulaires
 
 ## Installation
-1. Upload the `mlf` directory to the `/wp-content/plugins/` directory.
-2. Activate the plugin through the 'Plugins' menu in WordPress.
 
-## Usage
-After activation, you can access the plugin settings from the WordPress admin panel. Configure the settings as per your requirements.
+1. Uploadez le dossier `mlf` dans le répertoire `/wp-content/plugins/`
+2. Activez le plugin depuis l'interface d'administration WordPress
+3. Accédez au menu "Sessions MLF" pour commencer à gérer vos sessions
 
-## Features
-- Core functionality to enhance your WordPress site.
-- Admin interface for easy management.
-- Public-facing features for user interaction.
+## Structure de la base de données
 
-## Localization
-The plugin is ready for translation. You can find the localization template in the `languages` directory.
+- `wp_mlf_game_sessions` : Sessions de jeu
+- `wp_mlf_player_registrations` : Inscriptions des joueurs
+- `wp_mlf_custom_forms` : Formulaires personnalisés spécifiques à chaque session
+- `wp_mlf_custom_form_responses` : Réponses aux formulaires personnalisés
 
-## Uninstallation
-To uninstall the plugin, go to the 'Plugins' menu in WordPress and deactivate the plugin. The uninstall script will clean up any data created by the plugin.
+## Développement
 
-## Support
-For support, please contact the plugin author or visit the plugin's support forum.
+Pour contribuer au développement de ce plugin, vous pouvez :
+
+1. Cloner le repository
+2. Installer les dépendances de développement
+3. Suivre les standards de codage WordPress
