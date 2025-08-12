@@ -1229,9 +1229,7 @@ class MLF_Frontend {
      */
     private function get_character_sheet_download_url($sheet_id) {
         $nonce = wp_create_nonce('mlf_download_sheet_' . $sheet_id);
-        return add_query_arg(array(
-            'mlf_download_sheet' => $sheet_id,
-            'nonce' => $nonce
-        ), home_url());
+        $plugin_url = plugin_dir_url(dirname(__FILE__));
+        return $plugin_url . 'download-sheet.php?sheet_id=' . $sheet_id . '&nonce=' . $nonce;
     }
 }
