@@ -40,11 +40,8 @@ class MLF_Plugin {
 
         // Initialize admin functionality (classe s'auto-enregistre)
         $admin = new MLF_Admin();
-
-        // Initialize public functionality
-        $public = new MLF_Public();
         
-        // Initialize frontend functionality
+        // Initialize frontend functionality (gère le public et les shortcodes)
         $frontend = new MLF_Frontend();
     }
 }

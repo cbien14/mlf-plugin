@@ -223,11 +223,12 @@ class MLF_Game_Events {
      */
     public function enqueue_game_event_scripts() {
         if (is_singular('mlf_game_event') || is_post_type_archive('mlf_game_event')) {
-            wp_enqueue_script('mlf-game-events', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/js/mlf-game-events.js', array('jquery'), '1.0.0', true);
-            wp_enqueue_style('mlf-game-events', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/css/mlf-game-events.css', array(), '1.0.0');
+            // Utiliser les scripts publics principaux du plugin
+            wp_enqueue_script('mlf-public-js', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/js/mlf-public.js', array('jquery'), '1.0.0', true);
+            wp_enqueue_style('mlf-public-css', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/css/mlf-public.css', array(), '1.0.0');
             
             // Localize script for AJAX
-            wp_localize_script('mlf-game-events', 'mlf_ajax', array(
+            wp_localize_script('mlf-public-js', 'mlf_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('mlf_ajax_nonce'),
             ));

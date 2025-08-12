@@ -363,12 +363,325 @@ class MLF_Admin {
      * Render the registrations page.
      */
     public function render_registrations_page() {
+        global $wpdb;
+        
+        // Gérer les actions (confirmation, suppression, etc.)
+        if (isset($_POST['action']) && wp_verify_nonce($_POST['_wpnonce'], 'mlf_admin_action')) {
+            $this->handle_registration_action();
+        }
+        
+        // Récupérer toutes les inscriptions avec les informations de session
+        $registrations = $wpdb->get_results(
+            "SELECT r.*, s.session_name, s.session_date, s.session_time, s.max_players 
+             FROM {$wpdb->prefix}mlf_player_registrations r 
+             LEFT JOIN {$wpdb->prefix}mlf_game_sessions s ON r.session_id = s.id 
+             ORDER BY r.registration_date DESC",
+            ARRAY_A
+        );
+        
         ?>
         <div class="wrap">
             <h1><?php _e('Gestion des inscriptions', 'mlf'); ?></h1>
-            <p><?php _e('Ici vous pouvez gérer toutes les inscriptions aux sessions.', 'mlf'); ?></p>
+            
+            <?php if (isset($_GET['message'])): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($_GET['message']); ?></p>
+                </div>
+            <?php endif; ?>
+            
+            <?php if (empty($registrations)): ?>
+                <div class="notice notice-info">
+                    <p><?php _e('Aucune inscription trouvée.', 'mlf'); ?></p>
+                    <p><a href="<?php echo admin_url('admin.php?page=mlf-sessions'); ?>"><?php _e('Gérer les sessions', 'mlf'); ?></a></p>
+                </div>
+            <?php else: ?>
+                <p><?php printf(__('Total: %d inscriptions trouvées', 'mlf'), count($registrations)); ?></p>
+                
+                <form method="post">
+                    <?php wp_nonce_field('mlf_admin_action'); ?>
+                    
+                    <div class="tablenav top">
+                        <div class="alignleft actions">
+                            <select name="bulk_action">
+                                <option value=""><?php _e('Actions groupées', 'mlf'); ?></option>
+                                <option value="confirm"><?php _e('Confirmer', 'mlf'); ?></option>
+                                <option value="cancel"><?php _e('Annuler', 'mlf'); ?></option>
+                                <option value="delete"><?php _e('Supprimer', 'mlf'); ?></option>
+                            </select>
+                            <input type="submit" class="button" value="<?php _e('Appliquer', 'mlf'); ?>">
+                        </div>
+                    </div>
+                    
+                    <table class="wp-list-table widefat fixed striped">
+                        <thead>
+                            <tr>
+                                <td class="manage-column column-cb check-column">
+                                    <input type="checkbox" id="cb-select-all">
+                                </td>
+                                <th class="manage-column"><?php _e('ID', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Joueur', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Email', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Session', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Date session', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Statut', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Date inscription', 'mlf'); ?></th>
+                                <th class="manage-column"><?php _e('Actions', 'mlf'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($registrations as $registration): ?>
+                                <tr>
+                                    <th class="check-column">
+                                        <input type="checkbox" name="registration_ids[]" value="<?php echo $registration['id']; ?>">
+                                    </th>
+                                    <td><strong><?php echo $registration['id']; ?></strong></td>
+                                    <td>
+                                        <?php echo esc_html($registration['player_name']); ?>
+                                        <?php if (!empty($registration['player_phone'])): ?>
+                                            <br><small><?php echo esc_html($registration['player_phone']); ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <a href="mailto:<?php echo esc_attr($registration['player_email']); ?>">
+                                            <?php echo esc_html($registration['player_email']); ?>
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <?php if ($registration['session_name']): ?>
+                                            <strong><?php echo esc_html($registration['session_name']); ?></strong>
+                                            <br><small>ID: <?php echo $registration['session_id']; ?></small>
+                                        <?php else: ?>
+                                            <em><?php _e('Session supprimée', 'mlf'); ?></em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($registration['session_date']): ?>
+                                            <?php echo date_i18n('d/m/Y', strtotime($registration['session_date'])); ?>
+                                            <?php if ($registration['session_time']): ?>
+                                                <br><small><?php echo date('H:i', strtotime($registration['session_time'])); ?></small>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <em>-</em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        $status = $registration['registration_status'];
+                                        $status_class = '';
+                                        $status_label = '';
+                                        
+                                        switch ($status) {
+                                            case 'confirme':
+                                                $status_class = 'status-confirmed';
+                                                $status_label = __('Confirmé', 'mlf');
+                                                break;
+                                            case 'en_attente':
+                                                $status_class = 'status-pending';
+                                                $status_label = __('En attente', 'mlf');
+                                                break;
+                                            case 'annule':
+                                                $status_class = 'status-cancelled';
+                                                $status_label = __('Annulé', 'mlf');
+                                                break;
+                                            case 'liste_attente':
+                                                $status_class = 'status-waitlist';
+                                                $status_label = __('Liste d\'attente', 'mlf');
+                                                break;
+                                            default:
+                                                $status_label = esc_html($status);
+                                        }
+                                        ?>
+                                        <span class="status-badge <?php echo $status_class; ?>">
+                                            <?php echo $status_label; ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php echo date_i18n('d/m/Y H:i', strtotime($registration['registration_date'])); ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($status !== 'confirme'): ?>
+                                            <button type="submit" name="action" value="confirm_single" 
+                                                    onclick="this.form.registration_id.value=<?php echo $registration['id']; ?>"
+                                                    class="button button-small button-primary">
+                                                <?php _e('Confirmer', 'mlf'); ?>
+                                            </button>
+                                        <?php endif; ?>
+                                        
+                                        <button type="submit" name="action" value="delete_single" 
+                                                onclick="return confirm('<?php _e('Êtes-vous sûr de vouloir supprimer cette inscription ?', 'mlf'); ?>') && (this.form.registration_id.value=<?php echo $registration['id']; ?>)"
+                                                class="button button-small button-link-delete">
+                                            <?php _e('Supprimer', 'mlf'); ?>
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    
+                    <input type="hidden" name="registration_id" value="">
+                </form>
+            <?php endif; ?>
         </div>
+        
+        <style>
+            .status-badge {
+                padding: 3px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+            .status-confirmed { background: #d4edda; color: #155724; }
+            .status-pending { background: #fff3cd; color: #856404; }
+            .status-cancelled { background: #f8d7da; color: #721c24; }
+            .status-waitlist { background: #d1ecf1; color: #0c5460; }
+        </style>
+        
+        <script>
+            // Sélection/désélection de toutes les cases
+            document.getElementById('cb-select-all').addEventListener('change', function() {
+                var checkboxes = document.querySelectorAll('input[name="registration_ids[]"]');
+                for (var i = 0; i < checkboxes.length; i++) {
+                    checkboxes[i].checked = this.checked;
+                }
+            });
+        </script>
         <?php
+    }
+    
+    /**
+     * Handle registration actions (confirm, cancel, delete).
+     */
+    private function handle_registration_action() {
+        global $wpdb;
+        
+        $action = sanitize_text_field($_POST['action']);
+        $message = '';
+        
+        if ($action === 'confirm_single' || $action === 'delete_single') {
+            $registration_id = intval($_POST['registration_id']);
+            
+            if ($action === 'confirm_single') {
+                $result = $wpdb->update(
+                    $wpdb->prefix . 'mlf_player_registrations',
+                    array(
+                        'registration_status' => 'confirme',
+                        'confirmation_date' => current_time('mysql')
+                    ),
+                    array('id' => $registration_id),
+                    array('%s', '%s'),
+                    array('%d')
+                );
+                
+                if ($result !== false) {
+                    // Mettre à jour le compteur de la session
+                    $session_id = $wpdb->get_var($wpdb->prepare(
+                        "SELECT session_id FROM {$wpdb->prefix}mlf_player_registrations WHERE id = %d",
+                        $registration_id
+                    ));
+                    if ($session_id) {
+                        $this->update_session_player_count($session_id);
+                    }
+                    $message = __('Inscription confirmée avec succès.', 'mlf');
+                }
+                
+            } elseif ($action === 'delete_single') {
+                $session_id = $wpdb->get_var($wpdb->prepare(
+                    "SELECT session_id FROM {$wpdb->prefix}mlf_player_registrations WHERE id = %d",
+                    $registration_id
+                ));
+                
+                $result = $wpdb->delete(
+                    $wpdb->prefix . 'mlf_player_registrations',
+                    array('id' => $registration_id),
+                    array('%d')
+                );
+                
+                if ($result !== false) {
+                    // Mettre à jour le compteur de la session
+                    if ($session_id) {
+                        $this->update_session_player_count($session_id);
+                    }
+                    $message = __('Inscription supprimée avec succès.', 'mlf');
+                }
+            }
+        }
+        
+        // Actions groupées
+        elseif (!empty($_POST['registration_ids']) && !empty($_POST['bulk_action'])) {
+            $registration_ids = array_map('intval', $_POST['registration_ids']);
+            $bulk_action = sanitize_text_field($_POST['bulk_action']);
+            $count = 0;
+            
+            foreach ($registration_ids as $registration_id) {
+                $session_id = $wpdb->get_var($wpdb->prepare(
+                    "SELECT session_id FROM {$wpdb->prefix}mlf_player_registrations WHERE id = %d",
+                    $registration_id
+                ));
+                
+                if ($bulk_action === 'confirm') {
+                    $result = $wpdb->update(
+                        $wpdb->prefix . 'mlf_player_registrations',
+                        array(
+                            'registration_status' => 'confirme',
+                            'confirmation_date' => current_time('mysql')
+                        ),
+                        array('id' => $registration_id),
+                        array('%s', '%s'),
+                        array('%d')
+                    );
+                } elseif ($bulk_action === 'cancel') {
+                    $result = $wpdb->update(
+                        $wpdb->prefix . 'mlf_player_registrations',
+                        array('registration_status' => 'annule'),
+                        array('id' => $registration_id),
+                        array('%s'),
+                        array('%d')
+                    );
+                } elseif ($bulk_action === 'delete') {
+                    $result = $wpdb->delete(
+                        $wpdb->prefix . 'mlf_player_registrations',
+                        array('id' => $registration_id),
+                        array('%d')
+                    );
+                }
+                
+                if ($result !== false) {
+                    $count++;
+                    // Mettre à jour le compteur de la session
+                    if ($session_id) {
+                        $this->update_session_player_count($session_id);
+                    }
+                }
+            }
+            
+            $message = sprintf(__('%d inscriptions mises à jour.', 'mlf'), $count);
+        }
+        
+        if ($message) {
+            wp_redirect(add_query_arg('message', urlencode($message), wp_get_referer()));
+            exit;
+        }
+    }
+    
+    /**
+     * Update session player count.
+     */
+    private function update_session_player_count($session_id) {
+        global $wpdb;
+        
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}mlf_player_registrations WHERE session_id = %d AND registration_status = 'confirme'",
+            $session_id
+        ));
+        
+        $wpdb->update(
+            $wpdb->prefix . 'mlf_game_sessions',
+            array('current_players' => $count),
+            array('id' => $session_id),
+            array('%d'),
+            array('%d')
+        );
     }
 
     /**

@@ -52,35 +52,36 @@ jQuery(document).ready(function($) {
         var $form = $(this);
         var $submitBtn = $form.find('button[type="submit"]');
         var $loading = $form.find('.mlf-loading');
-        var $message = $('#mlf-registration-message');
+        var $message = $('#mlf-registration-result');
         
         // Disable submit button and show loading
         $submitBtn.prop('disabled', true);
-        $loading.show();
+        if ($loading.length) {
+            $loading.show();
+        }
         $message.hide();
         
-        // Prepare form data
+        // Prepare form data - collecte automatique de tous les champs
         var formData = {
-            action: 'mlf_register_for_session',
-            session_id: $form.data('session-id'),
-            player_name: $('#player_name').val(),
-            player_email: $('#player_email').val(),
-            player_phone: $('#player_phone').val(),
-            experience_level: $('#experience_level').val(),
-            character_name: $('#character_name').val(),
-            character_class: $('#character_class').val(),
-            special_requests: $('#special_requests').val(),
-            dietary_restrictions: $('#dietary_restrictions').val(),
-            mlf_registration_nonce: $form.find('[name="mlf_registration_nonce"]').val()
+            action: 'mlf_register_for_session'
         };
 
-        // Ajouter tous les champs personnalisés dynamiquement
-        $form.find('[name^="custom_field_"]').each(function() {
+        // Collecter tous les champs du formulaire dynamiquement
+        $form.find('input, select, textarea').each(function() {
             var $field = $(this);
             var fieldName = $field.attr('name');
             
+            // Ignorer les champs sans nom et les boutons de soumission
+            if (!fieldName || $field.attr('type') === 'submit') {
+                return;
+            }
+            
             if ($field.attr('type') === 'checkbox') {
                 formData[fieldName] = $field.is(':checked') ? $field.val() : '';
+            } else if ($field.attr('type') === 'radio') {
+                if ($field.is(':checked')) {
+                    formData[fieldName] = $field.val();
+                }
             } else {
                 formData[fieldName] = $field.val();
             }
@@ -93,42 +94,66 @@ jQuery(document).ready(function($) {
             data: formData,
             success: function(response) {
                 $submitBtn.prop('disabled', false);
-                $loading.hide();
+                if ($loading.length) {
+                    $loading.hide();
+                }
                 
-                if (response.success) {
-                    $message
-                        .removeClass('mlf-error')
-                        .addClass('mlf-success')
-                        .html('<p>' + response.data.message + '</p>')
-                        .show();
+                try {
+                    // S'assurer que la réponse est un objet JSON
+                    var jsonResponse = typeof response === 'string' ? JSON.parse(response) : response;
                     
-                    // Reset form after successful registration
-                    $form[0].reset();
-                    
-                    // Update UI to reflect registration
-                    updateSessionCard($form.data('session-id'));
-                    
-                    // Auto-close modal after a delay
-                    setTimeout(function() {
-                        $('#mlf-registration-modal').hide();
-                    }, 3000);
-                    
-                } else {
+                    if (jsonResponse.success) {
+                        $message
+                            .removeClass('mlf-error')
+                            .addClass('mlf-success')
+                            .html('<p>' + jsonResponse.data.message + '</p>')
+                            .show();
+                        
+                        // Reset form after successful registration
+                        $form[0].reset();
+                        
+                        // Update UI to reflect registration - données de session mises à jour
+                        if (jsonResponse.data.session) {
+                            updateSessionUI(jsonResponse.data.session);
+                        }
+                        
+                        // Rediriger vers la page de détails après un délai
+                        setTimeout(function() {
+                            var sessionId = $form.find('input[name="session_id"]').val();
+                            if (sessionId) {
+                                var currentUrl = new URL(window.location);
+                                currentUrl.searchParams.set('action', 'details');
+                                currentUrl.searchParams.set('session_id', sessionId);
+                                window.location.href = currentUrl.toString();
+                            }
+                        }, 2000);
+                        
+                    } else {
+                        $message
+                            .removeClass('mlf-success')
+                            .addClass('mlf-error')
+                            .html('<p>' + (jsonResponse.data.message || 'Erreur inconnue') + '</p>')
+                            .show();
+                    }
+                } catch (e) {
+                    // Si la réponse n'est pas du JSON valide, l'afficher telle quelle
                     $message
                         .removeClass('mlf-success')
                         .addClass('mlf-error')
-                        .html('<p>' + (response.data.message || 'Erreur inconnue') + '</p>')
+                        .html('<p>Erreur de traitement de la réponse: ' + response.substring(0, 200) + '</p>')
                         .show();
                 }
             },
             error: function(xhr, status, error) {
                 $submitBtn.prop('disabled', false);
-                $loading.hide();
+                if ($loading.length) {
+                    $loading.hide();
+                }
                 
                 $message
                     .removeClass('mlf-success')
                     .addClass('mlf-error')
-                    .html('<p>Erreur de communication avec le serveur</p>')
+                    .html('<p>Erreur de communication avec le serveur: ' + status + '</p>')
                     .show();
             }
         });
@@ -231,6 +256,51 @@ jQuery(document).ready(function($) {
                 }
             }
         });
+    }
+
+    /**
+     * Update session UI with new data after registration.
+     */
+    function updateSessionUI(sessionData) {
+        // Mettre à jour le compteur de joueurs sur la page de détails
+        $('.mlf-meta-item').each(function() {
+            var $item = $(this);
+            if ($item.find('strong').text().includes('Joueurs:')) {
+                $item.html(
+                    '<strong>Joueurs:</strong> ' + 
+                    sessionData.current_players + '/' + sessionData.max_players
+                );
+            }
+        });
+
+        // Mettre à jour le bouton d'inscription si la session est maintenant complète
+        if (sessionData.is_full) {
+            $('.mlf-session-actions .mlf-btn-primary').replaceWith(
+                '<span class="mlf-btn mlf-btn-disabled mlf-btn-large">Session complète</span>'
+            );
+        }
+
+        // Mettre à jour les cartes de session sur la page principale si présentes
+        $('.mlf-session-card').each(function() {
+            var $card = $(this);
+            var cardSessionId = $card.data('session-id');
+            
+            if (cardSessionId == sessionData.session_id) {
+                // Mettre à jour le compteur de joueurs
+                $card.find('.mlf-session-players').html(
+                    '<strong>Joueurs:</strong> ' + 
+                    sessionData.current_players + '/' + sessionData.max_players
+                );
+                
+                // Mettre à jour le bouton si complet
+                if (sessionData.is_full) {
+                    $card.find('.mlf-register-btn')
+                        .replaceWith('<span class="mlf-btn mlf-btn-disabled">Complet</span>');
+                }
+            }
+        });
+
+        console.log('Interface mise à jour après inscription:', sessionData);
     }
     
     // Filter functionality

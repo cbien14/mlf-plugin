@@ -224,20 +224,28 @@ class MLF_Database_Manager {
     /**
      * Register a player for a session.
      */
-    public static function register_player($session_id, $player_data) {
+    public static function register_player($session_id, $player_data = array()) {
         global $wpdb;
+        
+        // Vérifier que l'utilisateur est connecté
+        if (!is_user_logged_in()) {
+            return new WP_Error('not_logged_in', 'Vous devez être connecté pour vous inscrire à une session.');
+        }
+        
+        $current_user = wp_get_current_user();
+        $user_id = $current_user->ID;
         
         $table_name = $wpdb->prefix . 'mlf_player_registrations';
         
-        // Check if player is already registered
+        // Check if user is already registered (par user_id, plus fiable)
         $existing = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $table_name WHERE session_id = %d AND player_email = %s",
+            "SELECT id FROM $table_name WHERE session_id = %d AND user_id = %d",
             $session_id,
-            $player_data['player_email']
+            $user_id
         ));
         
         if ($existing) {
-            return new WP_Error('already_registered', 'Le joueur est déjà inscrit à cette session.');
+            return new WP_Error('already_registered', 'Vous êtes déjà inscrit à cette session.');
         }
         
         // Check if session is full
@@ -247,26 +255,64 @@ class MLF_Database_Manager {
         }
         
         $confirmed_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $table_name WHERE session_id = %d AND registration_status = 'confirme'",
+            "SELECT COUNT(*) FROM $table_name WHERE session_id = %d AND registration_status IN ('confirme', 'en_attente')",
             $session_id
         ));
         
-        $registration_status = 'en_attente';
+        // Confirmer automatiquement les inscriptions si places disponibles
+        $registration_status = 'confirme';
         if ($confirmed_count >= $session['max_players']) {
-            $registration_status = 'liste_attente';
+            return new WP_Error('session_full', 'Cette session est complète.');
         }
+        
+        // Récupérer automatiquement les informations du profil utilisateur
+        $user_meta = get_user_meta($user_id);
         
         $defaults = array(
             'session_id' => $session_id,
+            'user_id' => $user_id,
+            'player_name' => $current_user->display_name ?: $current_user->user_login,
+            'player_email' => $current_user->user_email,
+            'player_phone' => $user_meta['phone'][0] ?? '',
             'registration_status' => $registration_status,
-            'registration_date' => current_time('mysql')
+            'registration_date' => current_time('mysql'),
+            'confirmation_date' => current_time('mysql')
         );
         
+        // Fusionner avec les données additionnelles passées (comme niveau d'expérience, etc.)
         $player_data = wp_parse_args($player_data, $defaults);
-        
+
+        // Séparer les champs standards des champs personnalisés
+        $standard_fields = array(
+            'session_id', 'user_id', 'player_name', 'player_email', 'player_phone',
+            'experience_level', 'character_name', 'character_class', 'special_requests',
+            'dietary_restrictions', 'registration_status', 'registration_date',
+            'confirmation_date', 'attendance_status', 'notes'
+        );
+
+        $insert_data = array();
+        $custom_data = array();
+
+        // Classer les données
+        foreach ($player_data as $key => $value) {
+            if (in_array($key, $standard_fields)) {
+                $insert_data[$key] = $value;
+            } else {
+                // Stocker les champs personnalisés dans custom_data
+                $custom_data[$key] = $value;
+            }
+        }
+
+        // Ajouter les données personnalisées dans le champ notes si présentes
+        if (!empty($custom_data)) {
+            $existing_notes = $insert_data['notes'] ?? '';
+            $custom_json = json_encode($custom_data);
+            $insert_data['notes'] = $existing_notes . "\nCustom data: " . $custom_json;
+        }
+
         $result = $wpdb->insert(
             $table_name,
-            $player_data,
+            $insert_data,
             array(
                 '%d', // session_id
                 '%d', // user_id
@@ -422,6 +468,84 @@ class MLF_Database_Manager {
         return $wpdb->get_results($sql, ARRAY_A);
     }
     
+    
+    /**
+     * Check if a user is registered for a session.
+     */
+    public static function is_user_registered($session_id, $user_id = null) {
+        global $wpdb;
+        
+        if (!$user_id) {
+            if (!is_user_logged_in()) {
+                return false;
+            }
+            $user_id = get_current_user_id();
+        }
+        
+        $table_name = $wpdb->prefix . 'mlf_player_registrations';
+        
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT registration_status FROM $table_name WHERE session_id = %d AND user_id = %d",
+            $session_id,
+            $user_id
+        ));
+        
+        return $registration ? $registration->registration_status : false;
+    }
+    
+    /**
+     * Get user's registration details for a session.
+     */
+    public static function get_user_registration($session_id, $user_id = null) {
+        global $wpdb;
+        
+        if (!$user_id) {
+            if (!is_user_logged_in()) {
+                return false;
+            }
+            $user_id = get_current_user_id();
+        }
+        
+        $table_name = $wpdb->prefix . 'mlf_player_registrations';
+        
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE session_id = %d AND user_id = %d",
+            $session_id,
+            $user_id
+        ), ARRAY_A);
+    }
+    
+    /**
+     * Get user's registered sessions.
+     */
+    public static function get_user_sessions($user_id = null, $limit = 10) {
+        global $wpdb;
+        
+        if (!$user_id) {
+            if (!is_user_logged_in()) {
+                return array();
+            }
+            $user_id = get_current_user_id();
+        }
+        
+        $sessions_table = $wpdb->prefix . 'mlf_game_sessions';
+        $registrations_table = $wpdb->prefix . 'mlf_player_registrations';
+        
+        $sql = $wpdb->prepare(
+            "SELECT s.*, r.registration_status, r.registration_date 
+             FROM $sessions_table s
+             INNER JOIN $registrations_table r ON s.id = r.session_id
+             WHERE r.user_id = %d
+             AND s.session_date >= CURDATE()
+             ORDER BY s.session_date ASC, s.session_time ASC
+             LIMIT %d",
+            $user_id,
+            $limit
+        );
+        
+        return $wpdb->get_results($sql, ARRAY_A);
+    }
+
     /**
      * Get player's registered sessions.
      */

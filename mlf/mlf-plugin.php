@@ -73,20 +73,19 @@ define( 'MLF_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 
 // Include files safely
 function mlf_include_files() {
-    $files = [
-        'includes/class-mlf-plugin.php',
-        'includes/class-mlf-activator.php', 
+        // Include all necessary files
+    $files_to_include = array(
+        'includes/class-mlf-activator.php',
         'includes/class-mlf-deactivator.php',
+        'includes/class-mlf-plugin.php',
         'includes/class-mlf-database-manager.php',
-        'includes/class-mlf-game-events.php',
         'includes/class-mlf-session-forms-manager.php',
-        'includes/mlf-templates.php',
+        'includes/class-mlf-game-events.php',
         'includes/admin/class-mlf-admin.php',
-        'public/class-mlf-public.php',
-        'public/class-mlf-frontend.php'
-    ];
+        'public/class-mlf-frontend.php',
+    );
     
-    foreach ($files as $file) {
+    foreach ($files_to_include as $file) {
         $path = MLF_PLUGIN_PATH . $file;
         if (file_exists($path)) {
             require_once $path;
