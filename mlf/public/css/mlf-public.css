@@ -866,3 +866,285 @@
         padding: 15px;
     }
 }
+
+/* ========================================
+   USER ACCOUNT STYLES
+   ======================================== */
+
+/* User Sessions Container */
+.mlf-user-sessions {
+    margin: 20px 0;
+}
+
+.mlf-user-sessions h2 {
+    color: #333;
+    margin-bottom: 20px;
+    font-size: 24px;
+}
+
+/* Session Filters */
+.mlf-session-filters {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.mlf-filter-btn {
+    padding: 8px 16px;
+    border: 2px solid #007cba;
+    background: transparent;
+    color: #007cba;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.mlf-filter-btn:hover {
+    background: #007cba;
+    color: white;
+}
+
+.mlf-filter-btn.active {
+    background: #007cba;
+    color: white;
+}
+
+/* User Sessions List */
+.mlf-user-sessions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* User Session Card */
+.mlf-user-session-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+.mlf-user-session-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.mlf-user-session-card.mlf-session-past {
+    opacity: 0.8;
+    border-left: 4px solid #999;
+}
+
+.mlf-user-session-card.mlf-session-upcoming {
+    border-left: 4px solid #007cba;
+}
+
+/* Session Header */
+.mlf-user-session-card .mlf-session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.mlf-user-session-card .mlf-session-title {
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+    flex: 1;
+}
+
+.mlf-session-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Registration Status */
+.mlf-registration-status {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.mlf-status-confirme {
+    background: #d4edda;
+    color: #155724;
+}
+
+.mlf-status-en_attente {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.mlf-status-liste_attente {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.mlf-status-annule {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Session Details */
+.mlf-user-session-card .mlf-session-details {
+    margin-bottom: 15px;
+    line-height: 1.6;
+}
+
+.mlf-user-session-card .mlf-session-details > div {
+    margin-bottom: 8px;
+}
+
+.mlf-user-session-card .mlf-session-details strong {
+    color: #555;
+}
+
+.mlf-past-indicator {
+    color: #999;
+    font-style: italic;
+    font-size: 13px;
+}
+
+/* Session Actions */
+.mlf-user-session-card .mlf-session-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.mlf-btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+.mlf-btn-danger:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}
+
+/* User Profile Styles */
+.mlf-user-profile {
+    margin: 20px 0;
+}
+
+.mlf-user-profile h2 {
+    color: #333;
+    margin-bottom: 20px;
+    font-size: 24px;
+}
+
+.mlf-profile-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 30px;
+}
+
+.mlf-user-details,
+.mlf-user-stats {
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: white;
+}
+
+.mlf-user-details h3,
+.mlf-user-stats h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #555;
+    font-size: 18px;
+}
+
+.mlf-user-details p {
+    margin-bottom: 10px;
+}
+
+/* User Statistics */
+.mlf-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 15px;
+}
+
+.mlf-stat-item {
+    text-align: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.mlf-stat-number {
+    display: block;
+    font-size: 28px;
+    font-weight: bold;
+    color: #007cba;
+    margin-bottom: 5px;
+}
+
+.mlf-stat-label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* No Sessions State */
+.mlf-no-sessions {
+    text-align: center;
+    padding: 40px 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.mlf-no-sessions p {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 16px;
+}
+
+/* Responsive User Account */
+@media (max-width: 768px) {
+    .mlf-session-filters {
+        flex-direction: column;
+    }
+    
+    .mlf-filter-btn {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .mlf-user-session-card .mlf-session-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .mlf-session-badges {
+        justify-content: flex-start;
+    }
+    
+    .mlf-user-session-card .mlf-session-actions {
+        flex-direction: column;
+    }
+    
+    .mlf-profile-info {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .mlf-stats-grid {
+        grid-template-columns: 1fr;
+    }
+}

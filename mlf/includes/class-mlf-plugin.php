@@ -43,5 +43,8 @@ class MLF_Plugin {
         
         // Initialize frontend functionality (gère le public et les shortcodes)
         $frontend = new MLF_Frontend();
+        
+        // Initialize user account functionality
+        $user_account = new MLF_User_Account();
     }
 }
