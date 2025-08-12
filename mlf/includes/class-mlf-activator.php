@@ -22,6 +22,7 @@ class MLF_Activator {
         self::create_game_sessions_table();
         self::create_player_registrations_table();
         self::create_custom_forms_tables();
+        self::create_character_sheets_table();
         
         // Set default options
         self::set_default_options();
@@ -247,6 +248,44 @@ class MLF_Activator {
             KEY session_id (session_id),
             KEY registration_id (registration_id),
             UNIQUE KEY unique_response (session_id, registration_id),
+            FOREIGN KEY (session_id) REFERENCES {$wpdb->prefix}mlf_game_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (registration_id) REFERENCES {$wpdb->prefix}mlf_player_registrations(id) ON DELETE CASCADE
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+
+    /**
+     * Create the character sheets table.
+     */
+    private static function create_character_sheets_table() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'mlf_character_sheets';
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        $sql = "CREATE TABLE $table_name (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            session_id int(11) NOT NULL,
+            player_id bigint(20) unsigned NOT NULL,
+            registration_id int(11) NOT NULL,
+            file_name varchar(255) NOT NULL,
+            file_original_name varchar(255) NOT NULL,
+            file_path varchar(500) NOT NULL,
+            file_url varchar(500) NOT NULL,
+            file_type varchar(100) NOT NULL COMMENT 'MIME type of the file',
+            file_size bigint(20) NOT NULL COMMENT 'File size in bytes',
+            file_description text NULL COMMENT 'Optional description of the character sheet',
+            is_private tinyint(1) DEFAULT 0 COMMENT '0=visible to player and admins, 1=only to creator and admins',
+            uploaded_by bigint(20) unsigned NOT NULL COMMENT 'User ID of the uploader (usually game master)',
+            uploaded_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY session_id (session_id),
+            KEY player_id (player_id),
+            KEY registration_id (registration_id),
+            KEY uploaded_by (uploaded_by),
             FOREIGN KEY (session_id) REFERENCES {$wpdb->prefix}mlf_game_sessions(id) ON DELETE CASCADE,
             FOREIGN KEY (registration_id) REFERENCES {$wpdb->prefix}mlf_player_registrations(id) ON DELETE CASCADE
         ) $charset_collate;";

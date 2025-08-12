@@ -773,6 +773,19 @@ class MLF_Frontend {
                         </div>
                     <?php endif; ?>
                 </div>
+                
+                <?php
+                // Afficher les fiches de personnage pour les joueurs inscrits
+                if (is_user_logged_in()) {
+                    $current_user = wp_get_current_user();
+                    $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
+                    
+                    if ($existing_registration) {
+                        // L'utilisateur est inscrit, afficher ses fiches de personnage
+                        echo $this->display_user_character_sheets($session_id, $current_user->ID);
+                    }
+                }
+                ?>
             </div>
         </div>
         <?php
@@ -1115,5 +1128,110 @@ class MLF_Frontend {
         }
 
         echo '</div>';
+    }
+    
+    /**
+     * Afficher les fiches de personnage d'un utilisateur pour une session.
+     */
+    private function display_user_character_sheets($session_id, $user_id) {
+        global $wpdb;
+        
+        // Récupérer les fiches de personnage du joueur pour cette session
+        $character_sheets = $wpdb->get_results($wpdb->prepare(
+            "SELECT cs.*, s.session_name 
+             FROM {$wpdb->prefix}mlf_character_sheets cs
+             LEFT JOIN {$wpdb->prefix}mlf_game_sessions s ON cs.session_id = s.id
+             WHERE cs.session_id = %d AND cs.player_id = %d 
+             AND (cs.is_private = 0 OR cs.uploaded_by = %d)
+             ORDER BY cs.uploaded_at DESC",
+            $session_id, $user_id, $user_id
+        ), ARRAY_A);
+        
+        if (empty($character_sheets)) {
+            return ''; // Pas de fiches, ne rien afficher
+        }
+        
+        ob_start();
+        ?>
+        <div class="mlf-character-sheets-section">
+            <h3><?php _e('📋 Vos fiches de personnage', 'mlf'); ?></h3>
+            <div class="mlf-character-sheets-list">
+                <?php foreach ($character_sheets as $sheet): ?>
+                    <div class="mlf-character-sheet-item">
+                        <div class="mlf-sheet-info">
+                            <div class="mlf-sheet-name">
+                                <?php echo esc_html($sheet['file_original_name']); ?>
+                                <?php if ($sheet['is_private']): ?>
+                                    <span class="mlf-private-badge" title="<?php _e('Fiche privée', 'mlf'); ?>">🔒</span>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <?php if (!empty($sheet['file_description'])): ?>
+                                <div class="mlf-sheet-description">
+                                    <?php echo esc_html($sheet['file_description']); ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="mlf-sheet-meta">
+                                <span class="mlf-sheet-type"><?php echo strtoupper($sheet['file_type']); ?></span>
+                                <span class="mlf-sheet-size"><?php echo $this->format_file_size($sheet['file_size']); ?></span>
+                                <span class="mlf-sheet-date"><?php echo date_i18n('d/m/Y H:i', strtotime($sheet['uploaded_at'])); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="mlf-sheet-actions">
+                            <?php 
+                            $download_url = $this->get_character_sheet_download_url($sheet['id']);
+                            ?>
+                            <a href="<?php echo esc_url($download_url); ?>" 
+                               class="mlf-btn mlf-btn-small mlf-btn-secondary" 
+                               target="_blank"
+                               title="<?php _e('Télécharger la fiche', 'mlf'); ?>">
+                                📥 <?php _e('Télécharger', 'mlf'); ?>
+                            </a>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <div class="mlf-sheet-upload-section">
+                <p class="mlf-upload-info">
+                    <?php _e('Vous pouvez ajouter ou modifier vos fiches de personnage depuis votre espace personnel.', 'mlf'); ?>
+                </p>
+                <?php if (function_exists('get_permalink')): ?>
+                    <a href="<?php echo esc_url(get_permalink(get_option('mlf_user_account_page_id'))); ?>" 
+                       class="mlf-btn mlf-btn-primary mlf-btn-small">
+                        <?php _e('Gérer mes fiches', 'mlf'); ?>
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * Formater la taille d'un fichier pour l'affichage.
+     */
+    private function format_file_size($bytes) {
+        if ($bytes >= 1048576) {
+            return round($bytes / 1048576, 1) . ' MB';
+        } elseif ($bytes >= 1024) {
+            return round($bytes / 1024, 1) . ' KB';
+        } else {
+            return $bytes . ' B';
+        }
+    }
+    
+    /**
+     * Générer l'URL de téléchargement d'une fiche de personnage.
+     */
+    private function get_character_sheet_download_url($sheet_id) {
+        $nonce = wp_create_nonce('mlf_download_sheet_' . $sheet_id);
+        return add_query_arg(array(
+            'mlf_download_sheet' => $sheet_id,
+            'nonce' => $nonce
+        ), home_url());
     }
 }

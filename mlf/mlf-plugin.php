@@ -82,6 +82,7 @@ function mlf_include_files() {
         'includes/class-mlf-session-forms-manager.php',
         'includes/class-mlf-game-events.php',
         'includes/class-mlf-user-account.php',
+        'includes/class-mlf-character-sheets.php',
         'includes/admin/class-mlf-admin.php',
         'public/class-mlf-frontend.php',
     );

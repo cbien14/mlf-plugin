@@ -24,6 +24,9 @@ class MLF_Admin {
             add_action('wp_ajax_mlf_delete_session', array($this, 'handle_delete_session'));
             add_action('wp_ajax_mlf_update_session', array($this, 'handle_update_session'));
             add_action('wp_ajax_mlf_confirm_registration', array($this, 'handle_confirm_registration'));
+            
+            // Backup handler for character sheet upload in case the main one doesn't work
+            add_action('wp_ajax_mlf_upload_character_sheet', array($this, 'handle_admin_upload_character_sheet'));
         }
     }
 
@@ -81,6 +84,15 @@ class MLF_Admin {
             'manage_options',
             'mlf-registrations',
             array($this, 'render_registrations_page')
+        );
+        
+        add_submenu_page(
+            'mlf-sessions',
+            __('Fiches de personnage', 'mlf'),
+            __('Fiches de personnage', 'mlf'),
+            'manage_options',
+            'mlf-character-sheets',
+            array($this, 'render_character_sheets_page')
         );
         
         add_submenu_page(
@@ -1374,5 +1386,493 @@ class MLF_Admin {
         });
         </script>
         <?php
+    }
+    
+    /**
+     * Render the character sheets management page.
+     */
+    public function render_character_sheets_page() {
+        global $wpdb;
+        
+        // Handle actions (upload, delete, etc.)
+        if (isset($_POST['action']) && wp_verify_nonce($_POST['_wpnonce'], 'mlf_admin_action')) {
+            $this->handle_character_sheets_action();
+        }
+        
+        // Get session filter
+        $session_filter = isset($_GET['session_id']) ? intval($_GET['session_id']) : 0;
+        
+        // Get all sessions for filter dropdown
+        $sessions = $wpdb->get_results(
+            "SELECT id, session_name, session_date 
+             FROM {$wpdb->prefix}mlf_game_sessions 
+             ORDER BY session_date DESC",
+            ARRAY_A
+        );
+        
+        // Get character sheets with session and player info
+        $where_clause = $session_filter ? "WHERE cs.session_id = $session_filter" : "";
+        $character_sheets = $wpdb->get_results(
+            "SELECT cs.*, 
+                    s.session_name, 
+                    s.session_date,
+                    p.display_name as player_name,
+                    u.display_name as uploader_name
+             FROM {$wpdb->prefix}mlf_character_sheets cs
+             LEFT JOIN {$wpdb->prefix}mlf_game_sessions s ON cs.session_id = s.id
+             LEFT JOIN {$wpdb->users} p ON cs.player_id = p.ID
+             LEFT JOIN {$wpdb->users} u ON cs.uploaded_by = u.ID
+             $where_clause
+             ORDER BY cs.uploaded_at DESC",
+            ARRAY_A
+        );
+        
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Gestion des fiches de personnage', 'mlf'); ?></h1>
+            
+            <?php if (isset($_GET['message'])): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($_GET['message']); ?></p>
+                </div>
+            <?php endif; ?>
+            
+            <!-- Filter by session -->
+            <div class="tablenav top">
+                <form method="get" action="">
+                    <input type="hidden" name="page" value="mlf-character-sheets">
+                    <select name="session_id" onchange="this.form.submit()">
+                        <option value="0"><?php _e('Toutes les sessions', 'mlf'); ?></option>
+                        <?php foreach ($sessions as $session): ?>
+                            <option value="<?php echo $session['id']; ?>" <?php selected($session_filter, $session['id']); ?>>
+                                <?php echo esc_html($session['session_name']) . ' - ' . date('d/m/Y', strtotime($session['session_date'])); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+            </div>
+            
+            <?php if ($session_filter): ?>
+                <!-- Upload new character sheet -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <h2><?php _e('Ajouter une fiche de personnage', 'mlf'); ?></h2>
+                    <?php $this->render_character_upload_form($session_filter); ?>
+                </div>
+            <?php endif; ?>
+            
+            <!-- Character sheets table -->
+            <form method="post" action="">
+                <?php wp_nonce_field('mlf_admin_action'); ?>
+                
+                <div class="tablenav top">
+                    <div class="alignleft actions bulkactions">
+                        <select name="bulk_action">
+                            <option value=""><?php _e('Actions groupées', 'mlf'); ?></option>
+                            <option value="delete"><?php _e('Supprimer', 'mlf'); ?></option>
+                        </select>
+                        <input type="submit" class="button action" value="<?php _e('Appliquer', 'mlf'); ?>">
+                    </div>
+                </div>
+                
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <td class="manage-column column-cb check-column">
+                                <input type="checkbox" id="cb-select-all">
+                            </td>
+                            <th><?php _e('Nom du fichier', 'mlf'); ?></th>
+                            <th><?php _e('Session', 'mlf'); ?></th>
+                            <th><?php _e('Joueur', 'mlf'); ?></th>
+                            <th><?php _e('Type', 'mlf'); ?></th>
+                            <th><?php _e('Taille', 'mlf'); ?></th>
+                            <th><?php _e('Uploadé par', 'mlf'); ?></th>
+                            <th><?php _e('Date', 'mlf'); ?></th>
+                            <th><?php _e('Actions', 'mlf'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($character_sheets)): ?>
+                            <tr>
+                                <td colspan="9">
+                                    <p><?php _e('Aucune fiche de personnage trouvée.', 'mlf'); ?></p>
+                                    <?php if (!$session_filter): ?>
+                                        <p><em><?php _e('Sélectionnez une session pour voir les options d\'upload.', 'mlf'); ?></em></p>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($character_sheets as $sheet): ?>
+                                <tr>
+                                    <th scope="row" class="check-column">
+                                        <input type="checkbox" name="sheet_ids[]" value="<?php echo $sheet['id']; ?>">
+                                    </th>
+                                    <td>
+                                        <strong><?php echo esc_html($sheet['file_original_name']); ?></strong>
+                                        <?php if ($sheet['is_private']): ?>
+                                            <span class="dashicons dashicons-lock" title="<?php _e('Fiche privée', 'mlf'); ?>"></span>
+                                        <?php endif; ?>
+                                        <?php if (!empty($sheet['file_description'])): ?>
+                                            <br><em><?php echo esc_html(wp_trim_words($sheet['file_description'], 10)); ?></em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo esc_html($sheet['session_name']); ?></td>
+                                    <td><?php echo esc_html($sheet['player_name']); ?></td>
+                                    <td><?php echo strtoupper($sheet['file_type']); ?></td>
+                                    <td><?php echo $this->format_file_size($sheet['file_size']); ?></td>
+                                    <td><?php echo esc_html($sheet['uploader_name']); ?></td>
+                                    <td><?php echo date('d/m/Y H:i', strtotime($sheet['uploaded_at'])); ?></td>
+                                    <td>
+                                        <a href="<?php echo $this->get_download_url($sheet['id']); ?>" 
+                                           class="button button-small" target="_blank">
+                                            <?php _e('Télécharger', 'mlf'); ?>
+                                        </a>
+                                        <form method="post" style="display: inline;">
+                                            <?php wp_nonce_field('mlf_admin_action'); ?>
+                                            <input type="hidden" name="action" value="delete_single">
+                                            <input type="hidden" name="sheet_id" value="<?php echo $sheet['id']; ?>">
+                                            <input type="submit" class="button button-small button-link-delete" 
+                                                   value="<?php _e('Supprimer', 'mlf'); ?>"
+                                                   onclick="return confirm('<?php _e('Êtes-vous sûr de vouloir supprimer cette fiche ?', 'mlf'); ?>')">
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </form>
+        </div>
+        
+        <script>
+        // Sélection/désélection de toutes les cases
+        document.getElementById('cb-select-all').addEventListener('change', function() {
+            var checkboxes = document.querySelectorAll('input[name="sheet_ids[]"]');
+            for (var i = 0; i < checkboxes.length; i++) {
+                checkboxes[i].checked = this.checked;
+            }
+        });
+        </script>
+        <?php
+    }
+    
+    /**
+     * Handle character sheets actions (delete).
+     */
+    private function handle_character_sheets_action() {
+        global $wpdb;
+        
+        $action = sanitize_text_field($_POST['action']);
+        $message = '';
+        
+        if ($action === 'delete_single') {
+            $sheet_id = intval($_POST['sheet_id']);
+            if ($this->delete_character_sheet($sheet_id)) {
+                $message = __('Fiche supprimée avec succès.', 'mlf');
+            } else {
+                $message = __('Erreur lors de la suppression de la fiche.', 'mlf');
+            }
+        } elseif ($action === 'delete' && isset($_POST['sheet_ids'])) {
+            $sheet_ids = array_map('intval', $_POST['sheet_ids']);
+            $deleted = 0;
+            foreach ($sheet_ids as $sheet_id) {
+                if ($this->delete_character_sheet($sheet_id)) {
+                    $deleted++;
+                }
+            }
+            $message = sprintf(__('%d fiche(s) supprimée(s).', 'mlf'), $deleted);
+        }
+        
+        if ($message) {
+            wp_redirect(add_query_arg('message', urlencode($message), wp_get_referer()));
+            exit;
+        }
+    }
+    
+    /**
+     * Delete a character sheet.
+     */
+    private function delete_character_sheet($sheet_id) {
+        global $wpdb;
+        
+        // Get sheet info
+        $sheet = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}mlf_character_sheets WHERE id = %d",
+            $sheet_id
+        ), ARRAY_A);
+        
+        if (!$sheet) {
+            return false;
+        }
+        
+        // Delete file
+        if (file_exists($sheet['file_path'])) {
+            unlink($sheet['file_path']);
+        }
+        
+        // Delete from database
+        $result = $wpdb->delete(
+            $wpdb->prefix . 'mlf_character_sheets',
+            array('id' => $sheet_id),
+            array('%d')
+        );
+        
+        return $result !== false;
+    }
+    
+    /**
+     * Format file size for display.
+     */
+    private function format_file_size($bytes) {
+        if ($bytes >= 1048576) {
+            return round($bytes / 1048576, 1) . ' MB';
+        } elseif ($bytes >= 1024) {
+            return round($bytes / 1024, 1) . ' KB';
+        } else {
+            return $bytes . ' B';
+        }
+    }
+    
+    /**
+     * Get download URL for a character sheet.
+     */
+    private function get_download_url($sheet_id) {
+        $nonce = wp_create_nonce('mlf_download_sheet_' . $sheet_id);
+        return add_query_arg(array(
+            'mlf_download_sheet' => $sheet_id,
+            'nonce' => $nonce
+        ), home_url());
+    }
+    
+    /**
+     * Render character upload form for admin interface.
+     */
+    private function render_character_upload_form($session_id) {
+        $current_user_id = get_current_user_id();
+        
+        // Check if user can upload (admin or session manager)
+        if (!current_user_can('manage_options')) {
+            echo '<p>' . __('Vous n\'avez pas les permissions pour uploader des fichiers.', 'mlf') . '</p>';
+            return;
+        }
+        
+        // Get session info
+        global $wpdb;
+        $session = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}mlf_game_sessions WHERE id = %d",
+            $session_id
+        ), ARRAY_A);
+        
+        if (!$session) {
+            echo '<p>' . __('Session non trouvée.', 'mlf') . '</p>';
+            return;
+        }
+        
+        // Get registered players for this session
+        $players = $wpdb->get_results($wpdb->prepare(
+            "SELECT pr.*, u.display_name 
+             FROM {$wpdb->prefix}mlf_player_registrations pr
+             LEFT JOIN {$wpdb->users} u ON pr.user_id = u.ID
+             WHERE pr.session_id = %d AND pr.registration_status = 'confirme'
+             ORDER BY u.display_name",
+            $session_id
+        ), ARRAY_A);
+        
+        ?>
+        <div class="mlf-character-upload-form">
+            <form id="mlf-character-upload-form" method="post" enctype="multipart/form-data">
+                <?php wp_nonce_field('mlf_character_upload', 'mlf_character_nonce'); ?>
+                <input type="hidden" name="action" value="upload_character_sheet">
+                <input type="hidden" name="session_id" value="<?php echo esc_attr($session_id); ?>">
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="player_id"><?php _e('Joueur', 'mlf'); ?></label>
+                        </th>
+                        <td>
+                            <select name="player_id" id="player_id" required>
+                                <option value=""><?php _e('Sélectionner un joueur', 'mlf'); ?></option>
+                                <?php foreach ($players as $player): ?>
+                                    <option value="<?php echo esc_attr($player['user_id']); ?>">
+                                        <?php echo esc_html($player['display_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="character_file"><?php _e('Fichier', 'mlf'); ?></label>
+                        </th>
+                        <td>
+                            <input type="file" name="character_file" id="character_file" required 
+                                   accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif">
+                            <p class="description">
+                                <?php _e('Formats acceptés: PDF, DOC, DOCX, TXT, JPG, PNG, GIF. Taille max: ', 'mlf'); ?>
+                                <?php echo size_format(wp_max_upload_size()); ?>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="file_description"><?php _e('Description', 'mlf'); ?></label>
+                        </th>
+                        <td>
+                            <textarea name="file_description" id="file_description" rows="3" cols="50" 
+                                      placeholder="<?php _e('Description optionnelle du fichier...', 'mlf'); ?>"></textarea>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="is_private"><?php _e('Visibilité', 'mlf'); ?></label>
+                        </th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="is_private" id="is_private" value="1">
+                                <?php _e('Fichier privé (visible uniquement par les administrateurs)', 'mlf'); ?>
+                            </label>
+                        </td>
+                    </tr>
+                </table>
+                
+                <p class="submit">
+                    <input type="submit" class="button button-primary" value="<?php _e('Uploader la fiche', 'mlf'); ?>">
+                </p>
+            </form>
+            
+            <div id="mlf-upload-result"></div>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            $('#mlf-character-upload-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                var formData = new FormData(this);
+                formData.append('action', 'mlf_upload_character_sheet');
+                
+                $.ajax({
+                    url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    beforeSend: function() {
+                        $('#mlf-upload-result').html('<p><?php _e("Upload en cours...", "mlf"); ?></p>');
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#mlf-upload-result').html('<div class="notice notice-success"><p>' + response.data.message + '</p></div>');
+                            $('#mlf-character-upload-form')[0].reset();
+                            // Reload page to show new file
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        } else {
+                            $('#mlf-upload-result').html('<div class="notice notice-error"><p>' + response.data.message + '</p></div>');
+                        }
+                    },
+                    error: function() {
+                        $('#mlf-upload-result').html('<div class="notice notice-error"><p><?php _e("Erreur lors de l\'upload", "mlf"); ?></p></div>');
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+    
+    /**
+     * Backup handler for character sheet upload from admin interface.
+     */
+    public function handle_admin_upload_character_sheet() {
+        // Basic security check
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permissions insuffisantes'));
+        }
+        
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['mlf_character_nonce'], 'mlf_character_upload')) {
+            wp_send_json_error(array('message' => 'Erreur de sécurité'));
+        }
+        
+        $session_id = intval($_POST['session_id']);
+        $player_id = intval($_POST['player_id']);
+        $file_description = sanitize_textarea_field($_POST['file_description']);
+        $is_private = isset($_POST['is_private']) ? 1 : 0;
+        $user_id = get_current_user_id();
+        
+        // Validate file upload
+        if (!isset($_FILES['character_file']) || $_FILES['character_file']['error'] !== UPLOAD_ERR_OK) {
+            wp_send_json_error(array('message' => 'Erreur lors du téléchargement du fichier'));
+        }
+        
+        $file = $_FILES['character_file'];
+        $allowed_types = array('pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'gif');
+        $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        
+        if (!in_array($file_ext, $allowed_types)) {
+            wp_send_json_error(array('message' => 'Type de fichier non autorisé'));
+        }
+        
+        // Create uploads directory for character sheets
+        $upload_dir = wp_upload_dir();
+        $mlf_dir = $upload_dir['basedir'] . '/mlf-character-sheets';
+        if (!file_exists($mlf_dir)) {
+            wp_mkdir_p($mlf_dir);
+        }
+        
+        // Generate unique filename
+        $filename = sanitize_file_name($session_id . '_' . $player_id . '_' . time() . '.' . $file_ext);
+        $file_path = $mlf_dir . '/' . $filename;
+        $file_url = $upload_dir['baseurl'] . '/mlf-character-sheets/' . $filename;
+        
+        // Move uploaded file
+        if (!move_uploaded_file($file['tmp_name'], $file_path)) {
+            wp_send_json_error(array('message' => 'Erreur lors de la sauvegarde du fichier'));
+        }
+        
+        // Find registration_id for this player and session
+        global $wpdb;
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}mlf_player_registrations 
+             WHERE session_id = %d AND user_id = %d",
+            $session_id, $player_id
+        ));
+        
+        if (!$registration) {
+            // Delete uploaded file since we can't save to database
+            unlink($file_path);
+            wp_send_json_error(array('message' => 'Inscription non trouvée pour ce joueur'));
+        }
+        
+        // Save to database
+        $result = $wpdb->insert(
+            $wpdb->prefix . 'mlf_character_sheets',
+            array(
+                'session_id' => $session_id,
+                'player_id' => $player_id,
+                'registration_id' => $registration->id,
+                'uploaded_by' => $user_id,
+                'file_name' => $filename,
+                'file_original_name' => $file['name'],
+                'file_path' => $file_path,
+                'file_url' => $file_url,
+                'file_type' => $file_ext,
+                'file_size' => $file['size'],
+                'file_description' => $file_description,
+                'is_private' => $is_private,
+                'uploaded_at' => current_time('mysql')
+            ),
+            array('%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%d', '%s')
+        );
+        
+        if ($result === false) {
+            // Delete uploaded file if database insert failed
+            unlink($file_path);
+            wp_send_json_error(array('message' => 'Erreur lors de la sauvegarde en base de données'));
+        }
+        
+        wp_send_json_success(array('message' => 'Fiche uploadée avec succès'));
     }
 }

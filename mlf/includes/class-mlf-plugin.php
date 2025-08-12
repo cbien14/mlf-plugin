@@ -46,5 +46,12 @@ class MLF_Plugin {
         
         // Initialize user account functionality
         $user_account = new MLF_User_Account();
+        
+        // Initialize character sheets functionality after WordPress is fully loaded
+        add_action('init', function() {
+            if (class_exists('MLF_Character_Sheets')) {
+                $character_sheets = new MLF_Character_Sheets();
+            }
+        });
     }
 }
