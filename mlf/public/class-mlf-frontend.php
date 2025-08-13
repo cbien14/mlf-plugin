@@ -31,7 +31,7 @@ class MLF_Frontend {
      */
     public function enqueue_public_scripts() {
         wp_enqueue_style('mlf-public-css', plugin_dir_url(dirname(__FILE__)) . 'public/css/mlf-public.css', array(), '1.0.0');
-        wp_enqueue_script('mlf-public-js', plugin_dir_url(dirname(__FILE__)) . 'public/js/mlf-public.js', array('jquery'), '1.0.0', true);
+        wp_enqueue_script('mlf-public-js', plugin_dir_url(dirname(__FILE__)) . 'public/js/mlf-public.js', array('jquery'), '1.0.1', true);
         
         wp_localize_script('mlf-public-js', 'mlf_ajax', array(
             'ajax_url' => admin_url('admin-ajax.php'),
@@ -584,7 +584,7 @@ class MLF_Frontend {
 
         // Succès - inclure les données mises à jour
         wp_send_json_success(array(
-            'message' => 'Inscription réussie ! Vous recevrez un email de confirmation.',
+            'message' => 'Inscription enregistrée ! Votre demande est en attente de validation par l\'administrateur. Vous recevrez un email de confirmation.',
             'registration_id' => $result,
             'session' => array(
                 'current_players' => intval($updated_session['current_players']),

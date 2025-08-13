@@ -12,14 +12,28 @@ jQuery(document).ready(function($) {
     });
     
     // Handle details button clicks
-    $('.mlf-details-btn').on('click', function(e) {
+    $('.mlf-details-btn, .mlf-session-details-btn').on('click', function(e) {
         e.preventDefault();
         
         var sessionId = $(this).data('session-id');
+        
+        // Si on est sur la page utilisateur (ID 18), rediriger vers la page des sessions (ID 13)
         var currentUrl = new URL(window.location);
-        currentUrl.searchParams.set('action', 'details');
-        currentUrl.searchParams.set('session_id', sessionId);
-        window.location.href = currentUrl.toString();
+        var isUserPage = currentUrl.searchParams.get('page_id') === '18' || window.location.pathname.includes('ma-page');
+        
+        if (isUserPage) {
+            // Rediriger vers la page des sessions avec les détails
+            var sessionsUrl = new URL(window.location.origin);
+            sessionsUrl.searchParams.set('page_id', '13');
+            sessionsUrl.searchParams.set('action', 'details');
+            sessionsUrl.searchParams.set('session_id', sessionId);
+            window.location.href = sessionsUrl.toString();
+        } else {
+            // Rester sur la page actuelle et ajouter les paramètres
+            currentUrl.searchParams.set('action', 'details');
+            currentUrl.searchParams.set('session_id', sessionId);
+            window.location.href = currentUrl.toString();
+        }
     });
 
     // Handle registration from details page

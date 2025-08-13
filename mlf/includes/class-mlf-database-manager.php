@@ -259,8 +259,8 @@ class MLF_Database_Manager {
             $session_id
         ));
         
-        // Confirmer automatiquement les inscriptions si places disponibles
-        $registration_status = 'confirme';
+        // Les nouvelles inscriptions sont en attente de validation par l'administrateur
+        $registration_status = 'en_attente';
         if ($confirmed_count >= $session['max_players']) {
             return new WP_Error('session_full', 'Cette session est complète.');
         }
@@ -276,7 +276,7 @@ class MLF_Database_Manager {
             'player_phone' => $user_meta['phone'][0] ?? '',
             'registration_status' => $registration_status,
             'registration_date' => current_time('mysql'),
-            'confirmation_date' => current_time('mysql')
+            'confirmation_date' => null // Sera définie lors de la confirmation par l'admin
         );
         
         // Fusionner avec les données additionnelles passées (comme niveau d'expérience, etc.)
@@ -333,12 +333,19 @@ class MLF_Database_Manager {
         );
         
         if ($result !== false) {
+            $registration_id = $wpdb->insert_id;
+            
             // Update current players count
             if ($registration_status === 'confirme') {
                 self::update_session_player_count($session_id);
             }
             
-            return $wpdb->insert_id;
+            // Envoyer une notification aux administrateurs pour les inscriptions en attente
+            if ($registration_status === 'en_attente') {
+                self::notify_admins_new_registration($registration_id, $session_id, $insert_data);
+            }
+            
+            return $registration_id;
         }
         
         return false;
@@ -568,5 +575,50 @@ class MLF_Database_Manager {
         );
         
         return $wpdb->get_results($sql, ARRAY_A);
+    }
+    
+    /**
+     * Notify administrators of new registration pending approval.
+     */
+    private static function notify_admins_new_registration($registration_id, $session_id, $registration_data) {
+        // Récupérer les informations de la session
+        $session = self::get_game_session($session_id);
+        if (!$session) {
+            return;
+        }
+        
+        // Récupérer les administrateurs du site
+        $admins = get_users(array('role' => 'administrator'));
+        
+        // Préparer le contenu de l'email
+        $subject = sprintf('[MLF] Nouvelle inscription en attente - %s', $session['session_name']);
+        
+        $message = sprintf(
+            "Une nouvelle inscription nécessite votre validation :\n\n" .
+            "Session : %s\n" .
+            "Date : %s à %s\n" .
+            "Joueur : %s (%s)\n" .
+            "Téléphone : %s\n" .
+            "Niveau : %s\n\n" .
+            "Demandes spéciales :\n%s\n\n" .
+            "Pour valider cette inscription, rendez-vous sur :\n%s\n\n" .
+            "ID d'inscription : #%d",
+            $session['session_name'],
+            date_i18n('d/m/Y', strtotime($session['session_date'])),
+            date('H:i', strtotime($session['session_time'])),
+            $registration_data['player_name'],
+            $registration_data['player_email'],
+            $registration_data['player_phone'] ?? 'Non renseigné',
+            $registration_data['experience_level'] ?? 'Non renseigné',
+            $registration_data['special_requests'] ?? 'Aucune',
+            admin_url('admin.php?page=mlf-registrations'),
+            $registration_id
+        );
+        
+        // Envoyer l'email à tous les administrateurs
+        $headers = array('Content-Type: text/plain; charset=UTF-8');
+        foreach ($admins as $admin) {
+            wp_mail($admin->user_email, $subject, $message, $headers);
+        }
     }
 }

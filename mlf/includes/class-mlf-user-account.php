@@ -32,7 +32,7 @@ class MLF_User_Account {
     public function enqueue_user_account_scripts() {
         if (is_user_logged_in()) {
             wp_enqueue_style('mlf-user-account-css', plugin_dir_url(dirname(__FILE__)) . 'public/css/mlf-public.css', array(), '1.0.0');
-            wp_enqueue_script('mlf-user-account-js', plugin_dir_url(dirname(__FILE__)) . 'public/js/mlf-public.js', array('jquery'), '1.0.0', true);
+            wp_enqueue_script('mlf-user-account-js', plugin_dir_url(dirname(__FILE__)) . 'public/js/mlf-public.js', array('jquery'), '1.0.1', true);
             
             wp_localize_script('mlf-user-account-js', 'mlf_user_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
@@ -132,10 +132,18 @@ class MLF_User_Account {
                             </div>
 
                             <div class="mlf-session-actions">
-                                <button class="mlf-btn mlf-btn-secondary mlf-session-details-btn" 
-                                        data-session-id="<?php echo esc_attr($session['session_id']); ?>">
+                                <?php 
+                                // Générer le lien direct vers la page des sessions avec les détails
+                                $sessions_page_url = add_query_arg(array(
+                                    'page_id' => 13, // ID de la page "Les sessions"
+                                    'action' => 'details',
+                                    'session_id' => $session['session_id']
+                                ), home_url());
+                                ?>
+                                <a href="<?php echo esc_url($sessions_page_url); ?>" 
+                                   class="mlf-btn mlf-btn-secondary">
                                     <?php _e('Voir les détails', 'mlf'); ?>
-                                </button>
+                                </a>
                                 
                                 <?php if (!$is_past && $session['registration_status'] !== 'annule'): ?>
                                     <button class="mlf-btn mlf-btn-danger mlf-cancel-registration-btn" 
