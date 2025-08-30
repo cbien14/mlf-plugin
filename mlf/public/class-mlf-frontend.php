@@ -781,6 +781,17 @@ class MLF_Frontend {
                     $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
                     
                     if ($existing_registration) {
+                        // Vérifier s'il y a un formulaire personnalisé
+                        if (class_exists('MLF_Session_Forms_Manager')) {
+                            $custom_form = MLF_Session_Forms_Manager::get_session_form($session_id);
+                            if ($custom_form) {
+                                $user_response = MLF_Session_Forms_Manager::get_form_response($session_id, $existing_registration['id']);
+                                if (!$user_response) {
+                                    echo $this->display_custom_session_form($session_id, $existing_registration['id'], $custom_form);
+                                }
+                            }
+                        }
+                        
                         // L'utilisateur est inscrit, afficher ses fiches de personnage
                         echo $this->display_user_character_sheets($session_id, $current_user->ID);
                     }
@@ -1232,4 +1243,128 @@ class MLF_Frontend {
         $plugin_url = plugin_dir_url(dirname(__FILE__));
         return $plugin_url . 'download-sheet.php?sheet_id=' . $sheet_id . '&nonce=' . $nonce;
     }
+    
+    /**
+     * Afficher le formulaire personnalisé pour une session.
+     */
+    private function display_custom_session_form($session_id, $registration_id, $custom_form) {
+        if (!$custom_form) {
+            return '';
+        }
+        
+        // S'assurer que les form_fields sont correctement décodés
+        $form_fields = $custom_form['form_fields'];
+        if (is_string($form_fields)) {
+            $form_fields = json_decode($form_fields, true);
+        }
+        
+        if (empty($form_fields) || !is_array($form_fields)) {
+            echo '<p style="color: red;">Erreur: Impossible de charger les champs du formulaire.</p>';
+            return '';
+        }
+        
+        ob_start();
+        ?>
+        <div class="mlf-custom-session-form" style="background: #f9f9f9; padding: 20px; margin: 20px 0; border: 1px solid #ddd; border-radius: 5px;">
+            <div class="mlf-form-header">
+                <h3><?php echo htmlspecialchars(stripslashes($custom_form['form_title'] ?? 'Formulaire complémentaire')); ?></h3>
+                <?php if (!empty($custom_form['form_description'])): ?>
+                    <p class="mlf-form-description"><?php echo htmlspecialchars(stripslashes($custom_form['form_description'])); ?></p>
+                <?php endif; ?>
+                <p class="mlf-form-notice" style="background: #e3f2fd; padding: 10px; border-left: 4px solid #2196f3;">
+                    <strong>📋 Formulaire obligatoire :</strong> Veuillez remplir ce formulaire pour finaliser votre inscription à cette session.
+                </p>
+            </div>
+            
+            <form id="mlf-custom-session-form" class="mlf-form" method="post">
+                <input type="hidden" name="nonce" value="mlf_test_nonce" />
+                <input type="hidden" name="session_id" value="<?php echo intval($session_id); ?>" />
+                <input type="hidden" name="form_id" value="<?php echo intval($custom_form['id']); ?>" />
+                <input type="hidden" name="action" value="mlf_submit_custom_form" />
+                
+                <?php foreach ($form_fields as $index => $field): ?>
+                    <div class="mlf-form-group" style="margin-bottom: 20px;">
+                        <?php $this->render_custom_form_field($field, $index); ?>
+                    </div>
+                <?php endforeach; ?>
+                
+                <div class="mlf-form-actions" style="margin-top: 30px;">
+                    <button type="submit" class="mlf-btn mlf-btn-primary" style="background: #2196f3; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer;">
+                        Enregistrer mes réponses
+                    </button>
+                    <span class="mlf-loading" style="display: none; margin-left: 10px;">Envoi en cours...</span>
+                </div>
+                
+                <div id="mlf-form-message" class="mlf-message" style="display: none; margin-top: 15px;"></div>
+            </form>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    
+    /**
+     * Rendre un champ de formulaire personnalisé.
+     */
+    private function render_custom_form_field($field, $index = 0) {
+        if (!is_array($field) || empty($field['label'])) {
+            echo '<p style="color: red;">Erreur: Champ invalide</p>';
+            return;
+        }
+        
+        $field_name = 'custom_field_' . $index;
+        $field_id = 'field_' . $index;
+        $field_type = $field['type'] ?? 'text';
+        $field_required = !empty($field['required']) && $field['required'] !== '0';
+        $field_options = $field['options'] ?? '';
+        $field_label = $field['label'];
+        
+        echo '<label for="' . $field_id . '" style="display: block; font-weight: bold; margin-bottom: 5px;">';
+        echo htmlspecialchars(stripslashes($field_label));
+        if ($field_required) {
+            echo ' <span style="color: red;">*</span>';
+        }
+        echo '</label>';
+        
+        switch ($field_type) {
+            case 'select':
+                echo '<select id="' . $field_id . '" name="' . $field_name . '" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"';
+                if ($field_required) {
+                    echo ' required';
+                }
+                echo '>';
+                
+                echo '<option value="">-- Choisir --</option>';
+                
+                if ($field_options) {
+                    $options = explode("\r\n", $field_options);
+                    foreach ($options as $option) {
+                        $option = trim($option);
+                        if ($option) {
+                            $clean_option = stripslashes($option);
+                            echo '<option value="' . htmlspecialchars($clean_option) . '">' . htmlspecialchars($clean_option) . '</option>';
+                        }
+                    }
+                }
+                echo '</select>';
+                break;
+                
+            case 'textarea':
+                echo '<textarea id="' . $field_id . '" name="' . $field_name . '" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"';
+                if ($field_required) {
+                    echo ' required';
+                }
+                echo ' rows="4" placeholder="Votre réponse..."></textarea>';
+                break;
+                
+            case 'text':
+            default:
+                echo '<input type="text" id="' . $field_id . '" name="' . $field_name . '" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;"';
+                if ($field_required) {
+                    echo ' required';
+                }
+                echo ' placeholder="Votre réponse..." />';
+                break;
+        }
+    }
+
 }

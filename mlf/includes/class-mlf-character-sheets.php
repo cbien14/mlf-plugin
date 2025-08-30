@@ -49,9 +49,6 @@ class MLF_Character_Sheets {
      * Handle file download requests.
      */
     public function handle_file_download() {
-        // Debug log
-        error_log('MLF: handle_file_download called with GET: ' . print_r($_GET, true));
-        
         if (isset($_GET['mlf_download_sheet']) && isset($_GET['nonce'])) {
             error_log('MLF: Download request detected');
             $sheet_id = intval($_GET['mlf_download_sheet']);

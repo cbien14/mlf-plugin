@@ -45,6 +45,12 @@ class MLF_User_Account {
      * Display user's sessions (past and upcoming).
      */
     public function display_user_sessions($atts) {
+        $atts = shortcode_atts(array(
+            'show_past' => true,
+            'show_upcoming' => true,
+            'limit' => 20
+        ), $atts);
+
         if (!is_user_logged_in()) {
             return '<div class="mlf-login-required">
                 <p>' . __('Vous devez être connecté pour voir vos sessions.', 'mlf') . '</p>
@@ -52,174 +58,94 @@ class MLF_User_Account {
             </div>';
         }
 
-        $atts = shortcode_atts(array(
-            'show_past' => true,
-            'show_upcoming' => true,
-            'limit' => 20
-        ), $atts);
-
         $current_user_id = get_current_user_id();
-        
-        // Récupérer les sessions de l'utilisateur
-        $user_sessions = $this->get_user_sessions($current_user_id, $atts);
+        $sessions = $this->get_user_sessions($current_user_id, array('limit' => intval($atts['limit'])));
 
-        ob_start();
-        ?>
-        <div class="mlf-user-sessions">
-            <h2><?php _e('Mes Sessions de Jeu', 'mlf'); ?></h2>
+        if (empty($sessions)) {
+            return '<p>Vous n\'êtes inscrit à aucune session pour le moment.</p>';
+        }
+
+        $output = '<div class="mlf-user-sessions">
+            <h2>' . __('Mes Sessions de Jeu', 'mlf') . '</h2>
+            <div class="mlf-sessions-grid">';
+
+        foreach ($sessions as $session) {
+            $output .= '<div class="mlf-session-card">
+                <div class="mlf-session-header">
+                    <h3>' . esc_html($session['session_name']) . '</h3>
+                    <span class="mlf-session-type">' . esc_html($this->get_game_type_label($session['game_type'])) . '</span>
+                </div>
+                <div class="mlf-session-details">
+                    <p><strong>' . __('Date:', 'mlf') . '</strong> ' . date('d/m/Y', strtotime($session['session_date'])) . '</p>
+                    <p><strong>' . __('Heure:', 'mlf') . '</strong> ' . date('H:i', strtotime($session['session_time'])) . '</p>
+                    <p><strong>' . __('Lieu:', 'mlf') . '</strong> ' . esc_html($session['location']) . '</p>
+                    <p><strong>' . __('Statut:', 'mlf') . '</strong> 
+                        <span class="mlf-status mlf-status-' . esc_attr($session['registration_status']) . '">
+                            ' . esc_html($this->get_status_label($session['registration_status'])) . '
+                        </span>
+                    </p>
+                </div>
+                <div class="mlf-session-description">
+                    <p>' . wp_kses_post(substr($session['description'], 0, 150)) . '...</p>
+                </div>
+                <div class="mlf-session-actions">
+                    <button class="mlf-btn mlf-btn-secondary mlf-view-session" 
+                            data-session-id="' . intval($session['session_id']) . '">
+                        ' . __('Voir les détails', 'mlf') . '
+                    </button>';
             
-            <div class="mlf-session-filters">
-                <button class="mlf-filter-btn active" data-filter="all"><?php _e('Toutes', 'mlf'); ?></button>
-                <button class="mlf-filter-btn" data-filter="upcoming"><?php _e('À venir', 'mlf'); ?></button>
-                <button class="mlf-filter-btn" data-filter="past"><?php _e('Passées', 'mlf'); ?></button>
-            </div>
+            if (in_array($session['registration_status'], ['confirme', 'en_attente'])) {
+                $output .= '<button class="mlf-btn mlf-btn-danger mlf-cancel-registration" 
+                            data-registration-id="' . intval($session['id']) . '"
+                            data-session-name="' . esc_attr($session['session_name']) . '">
+                        ' . __('Annuler', 'mlf') . '
+                    </button>';
+            }
+            
+            $output .= '</div>
+            </div>';
+        }
 
-            <?php if (empty($user_sessions)): ?>
-                <div class="mlf-no-sessions">
-                    <p><?php _e('Vous n\'êtes inscrit à aucune session pour le moment.', 'mlf'); ?></p>
-                    <a href="<?php echo get_permalink(); ?>" class="mlf-btn mlf-btn-primary">
-                        <?php _e('Découvrir les sessions disponibles', 'mlf'); ?>
-                    </a>
-                </div>
-            <?php else: ?>
-                <div class="mlf-user-sessions-list">
-                    <?php foreach ($user_sessions as $session): ?>
-                        <?php
-                        $session_date = strtotime($session['session_date'] . ' ' . $session['session_time']);
-                        $is_past = $session_date < time();
-                        $status_class = 'mlf-session-' . ($is_past ? 'past' : 'upcoming');
-                        ?>
-                        <div class="mlf-user-session-card <?php echo $status_class; ?>" data-session-type="<?php echo $is_past ? 'past' : 'upcoming'; ?>">
-                            <div class="mlf-session-header">
-                                <h3 class="mlf-session-title"><?php echo esc_html($session['session_name']); ?></h3>
-                                <div class="mlf-session-badges">
-                                    <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
-                                        <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
-                                    </span>
-                                    <span class="mlf-registration-status mlf-status-<?php echo esc_attr($session['registration_status']); ?>">
-                                        <?php echo esc_html($this->get_status_label($session['registration_status'])); ?>
-                                    </span>
-                                </div>
-                            </div>
-                            
-                            <div class="mlf-session-details">
-                                <div class="mlf-session-date">
-                                    <strong><?php _e('Date:', 'mlf'); ?></strong>
-                                    <?php echo esc_html(date_i18n('d/m/Y à H:i', $session_date)); ?>
-                                    <?php if ($is_past): ?>
-                                        <span class="mlf-past-indicator"><?php _e('(Terminée)', 'mlf'); ?></span>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <?php if (!empty($session['location'])): ?>
-                                    <div class="mlf-session-location">
-                                        <strong><?php _e('Lieu:', 'mlf'); ?></strong>
-                                        <?php echo esc_html($session['location']); ?>
-                                    </div>
-                                <?php endif; ?>
-                                
-                                <div class="mlf-registration-date">
-                                    <strong><?php _e('Inscrit le:', 'mlf'); ?></strong>
-                                    <?php echo esc_html(date_i18n('d/m/Y', strtotime($session['registration_date']))); ?>
-                                </div>
-
-                                <?php if (!empty($session['notes'])): ?>
-                                    <div class="mlf-session-notes">
-                                        <strong><?php _e('Notes:', 'mlf'); ?></strong>
-                                        <?php echo wp_kses_post(wpautop($session['notes'])); ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-
-                            <div class="mlf-session-actions">
-                                <?php 
-                                // Générer le lien direct vers la page des sessions avec les détails
-                                $sessions_page_url = add_query_arg(array(
-                                    'page_id' => 13, // ID de la page "Les sessions"
-                                    'action' => 'details',
-                                    'session_id' => $session['session_id']
-                                ), home_url());
-                                ?>
-                                <a href="<?php echo esc_url($sessions_page_url); ?>" 
-                                   class="mlf-btn mlf-btn-secondary">
-                                    <?php _e('Voir les détails', 'mlf'); ?>
-                                </a>
-                                
-                                <?php if (!$is_past && $session['registration_status'] !== 'annule'): ?>
-                                    <button class="mlf-btn mlf-btn-danger mlf-cancel-registration-btn" 
-                                            data-registration-id="<?php echo esc_attr($session['id']); ?>"
-                                            data-session-name="<?php echo esc_attr($session['session_name']); ?>">
-                                        <?php _e('Annuler l\'inscription', 'mlf'); ?>
-                                    </button>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
+        $output .= '</div>
         </div>
 
         <script>
         jQuery(document).ready(function($) {
-            // Filtrage des sessions
-            $('.mlf-filter-btn').on('click', function() {
-                $('.mlf-filter-btn').removeClass('active');
-                $(this).addClass('active');
-                
-                var filter = $(this).data('filter');
-                var sessions = $('.mlf-user-session-card');
-                
-                if (filter === 'all') {
-                    sessions.show();
-                } else {
-                    sessions.hide();
-                    sessions.filter('[data-session-type="' + filter + '"]').show();
-                }
+            $(".mlf-view-session").on("click", function() {
+                var sessionId = $(this).data("session-id");
+                window.location.href = "/?page_id=13&action=details&session_id=" + sessionId;
             });
 
-            // Voir les détails de la session
-            $('.mlf-session-details-btn').on('click', function() {
-                var sessionId = $(this).data('session-id');
-                var currentUrl = window.location.href.split('?')[0];
-                window.location.href = currentUrl + '?action=details&session_id=' + sessionId;
-            });
-
-            // Annuler une inscription
-            $('.mlf-cancel-registration-btn').on('click', function() {
-                var registrationId = $(this).data('registration-id');
-                var sessionName = $(this).data('session-name');
-                var button = $(this);
+            $(".mlf-cancel-registration").on("click", function() {
+                var registrationId = $(this).data("registration-id");
+                var sessionName = $(this).data("session-name");
                 
-                if (confirm('Êtes-vous sûr de vouloir annuler votre inscription à "' + sessionName + '" ?')) {
+                if (confirm("Êtes-vous sûr de vouloir annuler votre inscription à \\"" + sessionName + "\\" ?")) {
                     $.ajax({
-                        url: mlf_user_ajax.ajax_url,
-                        type: 'POST',
+                        url: "' . admin_url('admin-ajax.php') . '",
+                        type: "POST",
                         data: {
-                            action: 'mlf_cancel_registration',
+                            action: "mlf_cancel_registration",
                             registration_id: registrationId,
-                            nonce: mlf_user_ajax.nonce
+                            nonce: "' . wp_create_nonce('mlf_user_account_nonce') . '"
                         },
                         success: function(response) {
                             if (response.success) {
-                                button.closest('.mlf-user-session-card').find('.mlf-registration-status')
-                                    .removeClass().addClass('mlf-registration-status mlf-status-annule')
-                                    .text('Annulée');
-                                button.remove();
-                                alert('Votre inscription a été annulée avec succès.');
+                                location.reload();
                             } else {
-                                alert('Erreur: ' + response.data.message);
+                                alert(response.data.message || "Erreur lors de l\'annulation");
                             }
                         },
                         error: function() {
-                            alert('Une erreur est survenue lors de l\'annulation.');
+                            alert("Erreur de communication avec le serveur");
                         }
                     });
                 }
             });
         });
-        </script>
-        <?php
-        return ob_get_clean();
+        </script>';
+
+        return $output;
     }
 
     /**
