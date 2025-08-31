@@ -140,8 +140,9 @@ class MLF_Admin {
      */
     public function render_sessions_page() {
         $sessions = MLF_Database_Manager::get_game_sessions(array(
-            'date_from' => date('Y-m-d'),
-            'limit' => 50
+            'limit' => 50,
+            'orderby' => 'session_date',
+            'order' => 'DESC'
         ));
         
         ?>
