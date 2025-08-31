@@ -14,6 +14,8 @@ class MLF_Frontend {
         // Hooks AJAX pour l'inscription aux sessions (uniquement pour utilisateurs connectés)
         add_action('wp_ajax_mlf_register_session', array($this, 'handle_session_registration'));
         add_action('wp_ajax_mlf_register_for_session', array($this, 'handle_session_registration'));
+        // Hook AJAX pour les formulaires personnalisés
+        add_action('wp_ajax_mlf_submit_custom_form', array($this, 'handle_custom_form_submission'));
         // Note: Pas de hooks nopriv car les utilisateurs doivent être connectés
     }
 
@@ -352,6 +354,65 @@ class MLF_Frontend {
                     </div>
                 </div>
             <?php endif; ?>
+
+            <?php
+            // Afficher les réponses du joueur s'il est connecté et inscrit
+            if (is_user_logged_in()) {
+                $current_user = wp_get_current_user();
+                $registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
+                
+                if ($registration) {
+                    // Vérifier s'il y a un formulaire personnalisé pour cette session
+                    $session_form = MLF_Session_Forms_Manager::get_session_form($session_id);
+                    
+                    if ($session_form) {
+                        // Récupérer les réponses du joueur
+                        $user_response = MLF_Session_Forms_Manager::get_form_response($session_id, $registration['id']);
+                        
+                        if ($user_response && !empty($user_response['response_data'])) {
+                            ?>
+                            <div class="mlf-section mlf-user-responses-section">
+                                <h3><?php _e('Vos réponses au questionnaire', 'mlf'); ?></h3>
+                                <div class="mlf-content">
+                                    <div class="mlf-user-responses">
+                                        <?php
+                                        $form_fields = $session_form['form_fields'];
+                                        $responses = $user_response['response_data'];
+                                        
+                                        foreach ($form_fields as $index => $field) {
+                                            $field_key = 'field_' . $index;
+                                            $response_value = isset($responses[$field_key]) ? $responses[$field_key] : '';
+                                            
+                                            if (!empty($response_value)) {
+                                                ?>
+                                                <div class="mlf-response-item">
+                                                    <strong class="mlf-question"><?php echo esc_html($field['label']); ?></strong>
+                                                    <div class="mlf-answer">
+                                                        <?php if ($field['type'] === 'textarea'): ?>
+                                                            <p><?php echo wp_kses_post(wpautop(esc_html($response_value))); ?></p>
+                                                        <?php else: ?>
+                                                            <p><?php echo esc_html($response_value); ?></p>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                                <?php
+                                            }
+                                        }
+                                        ?>
+                                        <div class="mlf-response-date">
+                                            <small class="mlf-submitted-date">
+                                                <?php _e('Répondu le', 'mlf'); ?> <?php echo esc_html(date_i18n('d/m/Y à H:i', strtotime($user_response['submitted_at']))); ?>
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php
+                        }
+                    }
+                }
+            }
+            ?>
         </div>
         <?php
         return ob_get_clean();
@@ -788,6 +849,9 @@ class MLF_Frontend {
                                 $user_response = MLF_Session_Forms_Manager::get_form_response($session_id, $existing_registration['id']);
                                 if (!$user_response) {
                                     echo $this->display_custom_session_form($session_id, $existing_registration['id'], $custom_form);
+                                } else if (!empty($user_response['response_data'])) {
+                                    // Afficher les réponses du joueur
+                                    echo $this->display_user_form_responses($session_id, $existing_registration['id'], $custom_form, $user_response);
                                 }
                             }
                         }
@@ -1277,7 +1341,7 @@ class MLF_Frontend {
             </div>
             
             <form id="mlf-custom-session-form" class="mlf-form" method="post">
-                <input type="hidden" name="nonce" value="mlf_test_nonce" />
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('mlf_public_nonce'); ?>" />
                 <input type="hidden" name="session_id" value="<?php echo intval($session_id); ?>" />
                 <input type="hidden" name="form_id" value="<?php echo intval($custom_form['id']); ?>" />
                 <input type="hidden" name="action" value="mlf_submit_custom_form" />
@@ -1298,6 +1362,47 @@ class MLF_Frontend {
                 <div id="mlf-form-message" class="mlf-message" style="display: none; margin-top: 15px;"></div>
             </form>
         </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            $('#mlf-custom-session-form').on('submit', function(e) {
+                e.preventDefault();
+                
+                var $form = $(this);
+                var $button = $form.find('button[type="submit"]');
+                var $loading = $form.find('.mlf-loading');
+                var $message = $('#mlf-form-message');
+                
+                $button.prop('disabled', true);
+                $loading.show();
+                $message.hide();
+                
+                $.ajax({
+                    url: '/wp-admin/admin-ajax.php',
+                    type: 'POST',
+                    data: $form.serialize(),
+                    success: function(response) {
+                        if (response.success) {
+                            $message.html('<div style="background: #d4edda; color: #155724; padding: 10px; border: 1px solid #c3e6cb; border-radius: 4px;">' + response.data + '</div>').show();
+                            // Recharger la page après 2 secondes
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        } else {
+                            $message.html('<div style="background: #f8d7da; color: #721c24; padding: 10px; border: 1px solid #f5c6cb; border-radius: 4px;">' + response.data + '</div>').show();
+                            $button.prop('disabled', false);
+                            $loading.hide();
+                        }
+                    },
+                    error: function() {
+                        $message.html('<div style="background: #f8d7da; color: #721c24; padding: 10px; border: 1px solid #f5c6cb; border-radius: 4px;">Erreur de communication avec le serveur.</div>').show();
+                        $button.prop('disabled', false);
+                        $loading.hide();
+                    }
+                });
+            });
+        });
+        </script>
         <?php
         return ob_get_clean();
     }
@@ -1365,6 +1470,165 @@ class MLF_Frontend {
                 echo ' placeholder="Votre réponse..." />';
                 break;
         }
+    }
+
+    /**
+     * Traite la soumission d'un formulaire personnalisé
+     */
+    public function handle_custom_form_submission() {
+        // Vérifications de sécurité basiques
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'mlf_public_nonce')) {
+            wp_die('Erreur de sécurité');
+        }
+        
+        // Vérifier que l'utilisateur est connecté
+        if (!function_exists('is_user_logged_in') || !is_user_logged_in()) {
+            wp_send_json_error('Vous devez être connecté pour soumettre ce formulaire');
+            return;
+        }
+        
+        $user_id = get_current_user_id();
+        $session_id = intval($_POST['session_id']);
+        $form_id = intval($_POST['form_id']);
+        
+        // Récupérer les données du formulaire
+        global $wpdb;
+        
+        $custom_form = $wpdb->get_row($wpdb->prepare("
+            SELECT * FROM {$wpdb->prefix}mlf_custom_forms 
+            WHERE id = %d AND session_id = %d
+        ", $form_id, $session_id));
+        
+        if (!$custom_form) {
+            wp_send_json_error('Formulaire non trouvé');
+            return;
+        }
+        
+        // Vérifier que l'utilisateur est inscrit à cette session
+        $registration = $wpdb->get_row($wpdb->prepare("
+            SELECT id FROM {$wpdb->prefix}mlf_player_registrations 
+            WHERE user_id = %d AND session_id = %d AND registration_status IN ('confirme', 'confirmed', 'en_attente')
+        ", $user_id, $session_id));
+        
+        if (!$registration) {
+            wp_send_json_error('Vous devez être inscrit à cette session');
+            return;
+        }
+        
+        // Traiter les réponses du formulaire
+        $form_fields = json_decode($custom_form->form_fields, true);
+        $responses = array();
+        
+        foreach ($form_fields as $index => $field) {
+            $field_name = 'custom_field_' . $index;
+            if (isset($_POST[$field_name]) && !empty($_POST[$field_name])) {
+                $responses[stripslashes($field['label'])] = stripslashes($_POST[$field_name]);
+            }
+        }
+        
+        // Sauvegarder les réponses dans la base de données
+        $result = $wpdb->insert(
+            $wpdb->prefix . 'mlf_custom_form_responses',
+            array(
+                'session_id' => $session_id,
+                'registration_id' => $registration->id,
+                'response_data' => json_encode($responses, JSON_UNESCAPED_UNICODE),
+                'submitted_at' => date('Y-m-d H:i:s')
+            ),
+            array('%d', '%d', '%s', '%s')
+        );
+        
+        if ($result !== false) {
+            wp_send_json_success('Formulaire soumis avec succès !');
+        } else {
+            wp_send_json_error('Erreur lors de la sauvegarde du formulaire');
+        }
+    }
+
+    /**
+     * Display user's form responses for a session.
+     */
+    private function display_user_form_responses($session_id, $registration_id, $custom_form, $user_response) {
+        ob_start();
+        ?>
+        <div class="mlf-user-responses-section">
+            <h3><?php _e('Vos réponses au questionnaire', 'mlf'); ?></h3>
+            <div class="mlf-content">
+                <div class="mlf-user-responses">
+                    <div style="background: #fff3cd; padding: 10px; margin: 10px 0; border: 1px solid #ffeaa7; border-radius: 4px;">
+                        <strong>Debug Info:</strong><br>
+                        Response data exists: <?php echo !empty($user_response['response_data']) ? 'YES' : 'NO'; ?><br>
+                        Custom form exists: <?php echo !empty($custom_form) ? 'YES' : 'NO'; ?><br>
+                        <?php if (!empty($custom_form)): ?>
+                            Form fields raw type: <?php echo gettype($custom_form['form_fields'] ?? 'undefined'); ?><br>
+                            <?php if (isset($custom_form['form_fields'])): ?>
+                                Form fields is array: <?php echo is_array($custom_form['form_fields']) ? 'YES' : 'NO'; ?><br>
+                                <?php if (is_array($custom_form['form_fields'])): ?>
+                                    Form fields count: <?php echo count($custom_form['form_fields']); ?><br>
+                                <?php else: ?>
+                                    Form fields content: <?php echo substr(strval($custom_form['form_fields']), 0, 100) . '...'; ?><br>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <?php if (!empty($user_response['response_data']) && is_array($user_response['response_data'])): ?>
+                            Response keys: <?php echo implode(', ', array_keys($user_response['response_data'])); ?><br>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <?php
+                    // Essayer de forcer le décodage si nécessaire
+                    $form_fields = null;
+                    if (!empty($custom_form['form_fields'])) {
+                        if (is_array($custom_form['form_fields'])) {
+                            $form_fields = $custom_form['form_fields'];
+                        } else if (is_string($custom_form['form_fields'])) {
+                            // Tenter de décoder le JSON manuellement
+                            $form_fields = json_decode($custom_form['form_fields'], true);
+                            if (!$form_fields) {
+                                // Tentative de nettoyage du JSON
+                                $clean_json = stripslashes($custom_form['form_fields']);
+                                $form_fields = json_decode($clean_json, true);
+                            }
+                        }
+                    }
+                    
+                    $responses = $user_response['response_data'] ?? array();
+                    
+                    if (is_array($form_fields) && is_array($responses) && !empty($form_fields)) {
+                        foreach ($form_fields as $index => $field) {
+                            if (!is_array($field) || !isset($field['label'])) {
+                                continue;
+                            }
+                            
+                            $field_key = 'field_' . $index;
+                            $response_value = isset($responses[$field_key]) ? $responses[$field_key] : '';
+                            
+                            ?>
+                            <div class="mlf-response-item">
+                                <strong class="mlf-question"><?php echo esc_html($field['label']); ?></strong>
+                                <div class="mlf-answer">
+                                    <p><?php echo esc_html($response_value ? $response_value : '[Aucune réponse]'); ?></p>
+                                </div>
+                            </div>
+                            <?php
+                        }
+                    } else {
+                        echo '<p>❌ Impossible d\'afficher les réponses - données malformées</p>';
+                        echo '<p>Form fields valid: ' . (is_array($form_fields) ? 'YES' : 'NO') . '</p>';
+                        echo '<p>Responses valid: ' . (is_array($responses) ? 'YES' : 'NO') . '</p>';
+                    }
+                    ?>
+                    
+                    <div class="mlf-response-date">
+                        <small class="mlf-submitted-date">
+                            <?php _e('Répondu le', 'mlf'); ?> <?php echo esc_html(date_i18n('d/m/Y à H:i', strtotime($user_response['submitted_at']))); ?>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
     }
 
 }
