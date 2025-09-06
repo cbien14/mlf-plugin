@@ -567,12 +567,16 @@ class MLF_Frontend {
                                 }
                                 
                                 echo '<div class="mlf-form-group mlf-custom-field">';
-                                echo '<label for="' . esc_attr($field_name) . '">';
-                                echo esc_html($field['label'] ?? '');
-                                if (!empty($field['required'])) {
-                                    echo ' <span class="mlf-required">*</span>';
+                                
+                                // Pour les checkboxes, on n'affiche pas de label séparé car le label fait partie de la checkbox
+                                if ($field['type'] !== 'checkbox') {
+                                    echo '<label for="' . esc_attr($field_name) . '">';
+                                    echo esc_html($field['label'] ?? '');
+                                    if (!empty($field['required'])) {
+                                        echo ' <span class="mlf-required">*</span>';
+                                    }
+                                    echo '</label>';
                                 }
-                                echo '</label>';
                                 
                                 switch ($field['type']) {
                                     case 'text':
@@ -662,7 +666,11 @@ class MLF_Frontend {
                                             echo 'required ';
                                         }
                                         echo '/>';
-                                        echo '<span>' . esc_html($field['label'] ?? '') . '</span>';
+                                        echo '<span>' . esc_html($field['label'] ?? '');
+                                        if (!empty($field['required'])) {
+                                            echo ' <span class="mlf-required">*</span>';
+                                        }
+                                        echo '</span>';
                                         echo '</label>';
                                         break;
                                 }
@@ -1114,15 +1122,17 @@ class MLF_Frontend {
                                                 $field_value = $existing_custom_responses['response_data'][$field_name];
                                             }
                                             
-                                            echo '<div class="mlf-form-group mlf-custom-field">';
-                                            echo '<label for="' . esc_attr($field_name) . '">';
-                                            echo esc_html($field['label'] ?? '');
-                                            if (!empty($field['required'])) {
-                                                echo ' <span class="mlf-required">*</span>';
-                                            }
-                                            echo '</label>';
-                                            
-                                            switch ($field['type']) {
+                            echo '<div class="mlf-form-group mlf-custom-field">';
+                            
+                            // Pour les checkboxes, on n'affiche pas de label séparé car le label fait partie de la checkbox
+                            if ($field['type'] !== 'checkbox') {
+                                echo '<label for="' . esc_attr($field_name) . '">';
+                                echo esc_html($field['label'] ?? '');
+                                if (!empty($field['required'])) {
+                                    echo ' <span class="mlf-required">*</span>';
+                                }
+                                echo '</label>';
+                            }                                            switch ($field['type']) {
                                                 case 'text':
                                                 case 'email':
                                                 case 'number':
@@ -1210,7 +1220,11 @@ class MLF_Frontend {
                                                         echo 'required ';
                                                     }
                                                     echo '/>';
-                                                    echo '<span>' . esc_html($field['label'] ?? '') . '</span>';
+                                                    echo '<span>' . esc_html($field['label'] ?? '');
+                                                    if (!empty($field['required'])) {
+                                                        echo ' <span class="mlf-required">*</span>';
+                                                    }
+                                                    echo '</span>';
                                                     echo '</label>';
                                                     break;
                                             }
@@ -1450,7 +1464,8 @@ class MLF_Frontend {
 
         echo '<div class="mlf-form-group">';
         
-        if ($field_label) {
+        // Pour les checkboxes, on structure différemment le label
+        if ($field_label && $field_type !== 'checkbox') {
             echo '<label for="' . $field_id . '">' . $field_label;
             if ($field_required) {
                 echo ' *';
@@ -1506,11 +1521,18 @@ class MLF_Frontend {
                 break;
                 
             case 'checkbox':
+                echo '<label class="mlf-checkbox-label">';
                 echo '<input type="checkbox" id="' . $field_id . '" name="' . $field_name . '" value="1"';
                 if ($field_required) {
                     echo ' required';
                 }
                 echo ' />';
+                echo '<span>' . $field_label;
+                if ($field_required) {
+                    echo ' *';
+                }
+                echo '</span>';
+                echo '</label>';
                 break;
                 
             case 'radio':
