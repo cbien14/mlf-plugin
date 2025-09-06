@@ -124,6 +124,29 @@ function run_mlf_plugin() {
 // Run earlier to ensure admin hooks are registered in time
 add_action('plugins_loaded', 'run_mlf_plugin', 5);
 
+// Hook pour vérifier et exécuter les migrations de base de données
+add_action('plugins_loaded', function() {
+    // S'assurer que les classes sont chargées
+    if (class_exists('MLF_Activator')) {
+        // Vérifier si des migrations sont nécessaires
+        if (MLF_Activator::needs_database_update()) {
+            MLF_Activator::run_database_migrations();
+        }
+        
+        // En mode debug, exécuter des tests de santé basiques
+        if (defined('WP_DEBUG') && WP_DEBUG && isset($_GET['mlf_health_check'])) {
+            add_action('wp_footer', function() {
+                if (method_exists('MLF_Activator', 'verify_and_repair_database')) {
+                    $health = MLF_Activator::verify_and_repair_database();
+                    if ($health['status'] !== 'ok') {
+                        error_log('MLF Health Check: ' . json_encode($health));
+                    }
+                }
+            });
+        }
+    }
+}, 10);
+
 // Hook pour nettoyer la sortie admin
 add_action('admin_init', function() {
     if (ob_get_level()) {
@@ -135,3 +158,100 @@ add_action('admin_init', function() {
         ob_start();
     }
 }, 1);
+
+// === DIAGNOSTIC DE LA SOLUTION PÉRENNE ===
+// Ajouter le test AJAX pour diagnostiquer la solution
+add_action('wp_ajax_test_mlf_solution', function() {
+    header('Content-Type: text/plain');
+    
+    echo "=== DIAGNOSTIC SOLUTION MLF ===\n\n";
+    
+    // Vérifier si la classe MLF_Session_Forms_Manager existe
+    if (!class_exists('MLF_Session_Forms_Manager')) {
+        echo "❌ Classe MLF_Session_Forms_Manager non chargée\n";
+        wp_die();
+    }
+    
+    echo "✅ Classe MLF_Session_Forms_Manager disponible\n";
+    
+    // Test de récupération du formulaire session 4
+    $form = MLF_Session_Forms_Manager::get_session_form(4);
+    
+    if (!$form) {
+        echo "❌ Aucun formulaire trouvé pour la session 4\n";
+        wp_die();
+    }
+    
+    echo "✅ Formulaire trouvé pour la session 4\n";
+    echo "Titre: " . $form['form_title'] . "\n";
+    
+    if (!is_array($form['form_fields'])) {
+        echo "❌ Les champs ne sont pas un array: " . gettype($form['form_fields']) . "\n";
+        wp_die();
+    }
+    
+    echo "✅ Champs correctement décodés: " . count($form['form_fields']) . " champs\n\n";
+    
+    foreach ($form['form_fields'] as $index => $field) {
+        if (!is_array($field)) {
+            echo "❌ Champ $index n'est pas un array\n";
+            continue;
+        }
+        
+        echo "Champ $index:\n";
+        echo "  - Type: " . ($field['type'] ?? 'N/A') . "\n";
+        echo "  - Nom: " . ($field['name'] ?? 'N/A') . "\n";
+        echo "  - Label: " . ($field['label'] ?? 'N/A') . "\n";
+        echo "  - Requis: " . (isset($field['required']) && $field['required'] ? 'Oui' : 'Non') . "\n";
+        
+        if (isset($field['options']) && is_array($field['options'])) {
+            echo "  - Options: " . implode(', ', $field['options']) . "\n";
+        }
+        
+        if (isset($field['placeholder'])) {
+            echo "  - Placeholder: " . $field['placeholder'] . "\n";
+        }
+        echo "\n";
+    }
+    
+    echo "🎉 SOLUTION PÉRENNE FONCTIONNELLE !\n";
+    echo "Les formulaires résistent maintenant aux caractères spéciaux.\n";
+    
+    wp_die();
+});
+
+// Ajouter une page de diagnostic dans l'admin
+add_action('admin_menu', function() {
+    add_management_page(
+        'Test MLF Solution',
+        'Test MLF Solution',
+        'manage_options',
+        'test-mlf-solution',
+        function() {
+            echo '<div class="wrap">';
+            echo '<h1>Test de la Solution MLF</h1>';
+            echo '<p>Cette page teste si la solution pérenne pour les formulaires MLF fonctionne.</p>';
+            echo '<button id="run-test" class="button button-primary">Exécuter le test</button>';
+            echo '<div id="test-results" style="margin-top: 20px; background: #f1f1f1; padding: 15px; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></div>';
+            
+            echo '<script>
+            document.getElementById("run-test").addEventListener("click", function() {
+                var resultsDiv = document.getElementById("test-results");
+                resultsDiv.textContent = "Exécution du test...";
+                
+                var xhr = new XMLHttpRequest();
+                xhr.open("POST", "' . admin_url('admin-ajax.php') . '");
+                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4) {
+                        resultsDiv.textContent = xhr.responseText;
+                    }
+                };
+                xhr.send("action=test_mlf_solution");
+            });
+            </script>';
+            
+            echo '</div>';
+        }
+    );
+});

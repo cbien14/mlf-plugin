@@ -11,9 +11,12 @@ class MLF_Frontend {
     public function __construct() {
         add_action('wp_enqueue_scripts', array($this, 'enqueue_public_scripts'));
         add_action('init', array($this, 'add_shortcodes'));
+        add_action('init', array($this, 'handle_form_submissions'));
         // Hooks AJAX pour l'inscription aux sessions (uniquement pour utilisateurs connectés)
         add_action('wp_ajax_mlf_register_session', array($this, 'handle_session_registration'));
         add_action('wp_ajax_mlf_register_for_session', array($this, 'handle_session_registration'));
+        // Hook pour mise à jour des réponses au formulaire custom
+        add_action('wp_ajax_mlf_update_custom_responses', array($this, 'handle_update_custom_responses'));
         // Note: Pas de hooks nopriv car les utilisateurs doivent être connectés
     }
 
@@ -24,6 +27,82 @@ class MLF_Frontend {
         add_shortcode('mlf_sessions_list', array($this, 'display_sessions_list'));
         add_shortcode('mlf_session_details', array($this, 'display_session_details'));
         add_shortcode('mlf_registration_form', array($this, 'display_registration_form'));
+    }
+
+    /**
+     * Handle form submissions (POST requests).
+     */
+    public function handle_form_submissions() {
+        if (!isset($_POST['action']) || $_POST['action'] !== 'mlf_update_custom_responses') {
+            return;
+        }
+
+        // Rediriger vers la méthode AJAX mais en mode direct
+        $this->handle_update_custom_responses_direct();
+    }
+
+    /**
+     * Handle custom form responses update for registered users (direct POST).
+     */
+    private function handle_update_custom_responses_direct() {
+        // Vérifier l'utilisateur connecté
+        if (!is_user_logged_in()) {
+            wp_die(__('Vous devez être connecté.', 'mlf'));
+            return;
+        }
+
+        // Vérifier le nonce
+        if (!wp_verify_nonce($_POST['mlf_responses_nonce'], 'mlf_update_responses')) {
+            wp_die(__('Erreur de sécurité', 'mlf'));
+            return;
+        }
+
+        $session_id = intval($_POST['session_id']);
+        $registration_id = intval($_POST['registration_id']);
+        $current_user = wp_get_current_user();
+
+        // Vérifier que l'utilisateur est bien inscrit à cette session
+        $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
+        if (!$existing_registration || $existing_registration['id'] != $registration_id) {
+            wp_die(__('Vous n\'êtes pas inscrit à cette session.', 'mlf'));
+            return;
+        }
+
+        // Collecter les données du formulaire custom
+        $custom_form_data = array();
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'field_') === 0) {
+                if (is_array($value)) {
+                    $custom_form_data[$key] = array_map('sanitize_text_field', $value);
+                } else {
+                    $custom_form_data[$key] = sanitize_text_field($value);
+                }
+            }
+        }
+
+        // Sauvegarder les réponses
+        if (!empty($custom_form_data) && class_exists('MLF_Session_Forms_Manager')) {
+            $save_result = MLF_Session_Forms_Manager::save_form_response(
+                $session_id,
+                $registration_id,
+                $custom_form_data
+            );
+            
+            if ($save_result) {
+                // Rediriger avec message de succès
+                $redirect_url = add_query_arg(array(
+                    'action' => 'details',
+                    'session_id' => $session_id,
+                    'mlf_message' => 'updated'
+                ), home_url());
+                wp_redirect($redirect_url);
+                exit;
+            } else {
+                wp_die(__('Erreur lors de la sauvegarde de vos réponses.', 'mlf'));
+            }
+        } else {
+            wp_die(__('Aucune donnée à sauvegarder.', 'mlf'));
+        }
     }
 
     /**
@@ -385,20 +464,18 @@ class MLF_Frontend {
 
         // Vérifier si l'utilisateur est déjà inscrit
         $existing_registration = MLF_Database_Manager::is_user_registered($session_id);
+        $user_registration_data = null;
+        $existing_custom_responses = null;
+        
         if ($existing_registration) {
-            $status_labels = array(
-                'confirme' => __('Confirmé', 'mlf'),
-                'en_attente' => __('En attente', 'mlf'),
-                'liste_attente' => __('Liste d\'attente', 'mlf'),
-                'annule' => __('Annulé', 'mlf')
-            );
+            // Récupérer les données complètes de l'inscription
+            $current_user = wp_get_current_user();
+            $user_registration_data = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
             
-            $status_label = isset($status_labels[$existing_registration]) ? $status_labels[$existing_registration] : $existing_registration;
-            
-            return '<div class="mlf-already-registered">' .
-                   '<p><strong>' . __('Vous êtes déjà inscrit à cette session.', 'mlf') . '</strong></p>' .
-                   '<p>' . __('Statut :', 'mlf') . ' <span class="mlf-status mlf-status-' . esc_attr($existing_registration) . '">' . esc_html($status_label) . '</span></p>' .
-                   '</div>';
+            // Récupérer les réponses aux formulaires custom existantes
+            if ($user_registration_data && class_exists('MLF_Session_Forms_Manager')) {
+                $existing_custom_responses = MLF_Session_Forms_Manager::get_form_response($session_id, $user_registration_data['id']);
+            }
         }
 
         // Récupérer les informations de l'utilisateur connecté
@@ -449,51 +526,172 @@ class MLF_Frontend {
                     </div>
                 </div>
                 
-                <div class="mlf-session-info-section">
-                    <h4><?php _e('Informations pour cette session', 'mlf'); ?></h4>
-                    
-                    <div class="mlf-form-group">
-                        <label for="experience_level"><?php _e('Votre niveau d\'expérience', 'mlf'); ?></label>
-                        <select id="experience_level" name="experience_level">
-                            <option value="debutant"><?php _e('Débutant', 'mlf'); ?></option>
-                            <option value="intermediaire" selected><?php _e('Intermédiaire', 'mlf'); ?></option>
-                            <option value="avance"><?php _e('Avancé', 'mlf'); ?></option>
-                            <option value="expert"><?php _e('Expert', 'mlf'); ?></option>
-                        </select>
-                    </div>
-                    
-                    <?php if ($session['game_type'] === 'jdr'): ?>
-                        <div class="mlf-form-group">
-                            <label for="character_name"><?php _e('Nom du personnage souhaité', 'mlf'); ?></label>
-                            <input type="text" id="character_name" name="character_name" 
-                                   placeholder="<?php _e('Ex: Elara la Magicienne', 'mlf'); ?>" />
+                <?php
+                // Ajouter le formulaire custom de la session s'il existe
+                if (class_exists('MLF_Session_Forms_Manager')) {
+                    $custom_form = MLF_Session_Forms_Manager::get_session_form($session_id);
+                    if ($custom_form && !empty($custom_form['form_fields'])) {
+                        ?>
+                        <div class="mlf-custom-form-section">
+                            <h4><?php echo esc_html($custom_form['form_title'] ?? __('Questions spécifiques à cette session', 'mlf')); ?></h4>
+                            <?php if (!empty($custom_form['form_description'])): ?>
+                                <p class="mlf-form-description"><?php echo wp_kses_post($custom_form['form_description']); ?></p>
+                            <?php endif; ?>
+                            
+                            <?php
+                            // Si l'utilisateur est déjà inscrit, afficher un message et pré-remplir avec ses réponses
+                            if ($existing_registration) {
+                                $status_labels = array(
+                                    'confirme' => __('Confirmé', 'mlf'),
+                                    'en_attente' => __('En attente', 'mlf'),
+                                    'liste_attente' => __('Liste d\'attente', 'mlf'),
+                                    'annule' => __('Annulé', 'mlf')
+                                );
+                                $status_label = isset($status_labels[$existing_registration]) ? $status_labels[$existing_registration] : $existing_registration;
+                                ?>
+                                <div class="mlf-already-registered-notice">
+                                    <p><strong><?php _e('Vous êtes déjà inscrit à cette session.', 'mlf'); ?></strong></p>
+                                    <p><?php _e('Statut :', 'mlf'); ?> <span class="mlf-status mlf-status-<?php echo esc_attr($existing_registration); ?>"><?php echo esc_html($status_label); ?></span></p>
+                                    <p><em><?php _e('Vous pouvez modifier vos réponses au formulaire ci-dessous.', 'mlf'); ?></em></p>
+                                </div>
+                                <?php
+                            }
+                            
+                            foreach ($custom_form['form_fields'] as $field_index => $field) {
+                                $field_name = 'field_' . $field_index;
+                                $field_value = '';
+                                
+                                // Pré-remplir avec les réponses existantes
+                                if ($existing_custom_responses && isset($existing_custom_responses['response_data'][$field_name])) {
+                                    $field_value = $existing_custom_responses['response_data'][$field_name];
+                                }
+                                
+                                echo '<div class="mlf-form-group mlf-custom-field">';
+                                echo '<label for="' . esc_attr($field_name) . '">';
+                                echo esc_html($field['label'] ?? '');
+                                if (!empty($field['required'])) {
+                                    echo ' <span class="mlf-required">*</span>';
+                                }
+                                echo '</label>';
+                                
+                                switch ($field['type']) {
+                                    case 'text':
+                                    case 'email':
+                                    case 'number':
+                                        echo '<input type="' . esc_attr($field['type']) . '" ';
+                                        echo 'id="' . esc_attr($field_name) . '" ';
+                                        echo 'name="' . esc_attr($field_name) . '" ';
+                                        echo 'value="' . esc_attr($field_value) . '" ';
+                                        if (!empty($field['placeholder'])) {
+                                            echo 'placeholder="' . esc_attr($field['placeholder']) . '" ';
+                                        }
+                                        if (!empty($field['required'])) {
+                                            echo 'required ';
+                                        }
+                                        echo '/>';
+                                        break;
+                                        
+                                    case 'textarea':
+                                        echo '<textarea ';
+                                        echo 'id="' . esc_attr($field_name) . '" ';
+                                        echo 'name="' . esc_attr($field_name) . '" ';
+                                        echo 'rows="' . esc_attr($field['rows'] ?? 3) . '" ';
+                                        if (!empty($field['placeholder'])) {
+                                            echo 'placeholder="' . esc_attr($field['placeholder']) . '" ';
+                                        }
+                                        if (!empty($field['required'])) {
+                                            echo 'required ';
+                                        }
+                                        echo '>' . esc_textarea($field_value) . '</textarea>';
+                                        break;
+                                        
+                                    case 'select':
+                                        echo '<select ';
+                                        echo 'id="' . esc_attr($field_name) . '" ';
+                                        echo 'name="' . esc_attr($field_name) . '" ';
+                                        if (!empty($field['required'])) {
+                                            echo 'required ';
+                                        }
+                                        echo '>';
+                                        
+                                        if (!empty($field['placeholder'])) {
+                                            echo '<option value="">' . esc_html($field['placeholder']) . '</option>';
+                                        }
+                                        
+                                        if (!empty($field['options'])) {
+                                            foreach ($field['options'] as $option) {
+                                                $selected = ($field_value === $option) ? 'selected' : '';
+                                                echo '<option value="' . esc_attr($option) . '" ' . $selected . '>' . esc_html($option) . '</option>';
+                                            }
+                                        }
+                                        echo '</select>';
+                                        break;
+                                        
+                                    case 'radio':
+                                        if (!empty($field['options'])) {
+                                            echo '<div class="mlf-radio-group">';
+                                            foreach ($field['options'] as $option_index => $option) {
+                                                $radio_id = $field_name . '_' . $option_index;
+                                                $checked = ($field_value === $option) ? 'checked' : '';
+                                                echo '<label class="mlf-radio-label">';
+                                                echo '<input type="radio" ';
+                                                echo 'id="' . esc_attr($radio_id) . '" ';
+                                                echo 'name="' . esc_attr($field_name) . '" ';
+                                                echo 'value="' . esc_attr($option) . '" ';
+                                                echo $checked . ' ';
+                                                if (!empty($field['required'])) {
+                                                    echo 'required ';
+                                                }
+                                                echo '/>';
+                                                echo '<span>' . esc_html($option) . '</span>';
+                                                echo '</label>';
+                                            }
+                                            echo '</div>';
+                                        }
+                                        break;
+                                        
+                                    case 'checkbox':
+                                        $checked = !empty($field_value) ? 'checked' : '';
+                                        echo '<label class="mlf-checkbox-label">';
+                                        echo '<input type="checkbox" ';
+                                        echo 'id="' . esc_attr($field_name) . '" ';
+                                        echo 'name="' . esc_attr($field_name) . '" ';
+                                        echo 'value="1" ';
+                                        echo $checked . ' ';
+                                        if (!empty($field['required'])) {
+                                            echo 'required ';
+                                        }
+                                        echo '/>';
+                                        echo '<span>' . esc_html($field['label'] ?? '') . '</span>';
+                                        echo '</label>';
+                                        break;
+                                }
+                                
+                                if (!empty($field['description'])) {
+                                    echo '<small class="mlf-field-description">' . esc_html($field['description']) . '</small>';
+                                }
+                                
+                                echo '</div>';
+                            }
+                            ?>
                         </div>
-                        
-                        <div class="mlf-form-group">
-                            <label for="character_class"><?php _e('Classe/Type de personnage préféré', 'mlf'); ?></label>
-                            <input type="text" id="character_class" name="character_class" 
-                                   placeholder="<?php _e('Ex: Magicien, Guerrier, Rôdeur...', 'mlf'); ?>" />
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div class="mlf-form-group">
-                        <label for="special_requests"><?php _e('Demandes spéciales ou préférences', 'mlf'); ?></label>
-                        <textarea id="special_requests" name="special_requests" rows="3" 
-                                  placeholder="<?php _e('Toute information utile pour le MJ...', 'mlf'); ?>"></textarea>
-                    </div>
-                    
-                    <div class="mlf-form-group">
-                        <label for="dietary_restrictions"><?php _e('Restrictions alimentaires', 'mlf'); ?></label>
-                        <textarea id="dietary_restrictions" name="dietary_restrictions" rows="2" 
-                                  placeholder="<?php _e('Allergies, régimes spéciaux...', 'mlf'); ?>"></textarea>
-                    </div>
-                </div>
+                        <?php
+                    }
+                }
+                ?>
                 
                 <div class="mlf-form-actions">
-                    <button type="submit" class="mlf-btn mlf-btn-primary">
-                        <?php _e('Confirmer mon inscription', 'mlf'); ?>
-                    </button>
-                    <span class="mlf-loading" style="display: none;"><?php _e('Inscription en cours...', 'mlf'); ?></span>
+                    <?php if ($existing_registration): ?>
+                        <button type="submit" class="mlf-btn mlf-btn-primary">
+                            <?php _e('Mettre à jour mes réponses', 'mlf'); ?>
+                        </button>
+                        <span class="mlf-loading" style="display: none;"><?php _e('Mise à jour en cours...', 'mlf'); ?></span>
+                    <?php else: ?>
+                        <button type="submit" class="mlf-btn mlf-btn-primary">
+                            <?php _e('Confirmer mon inscription', 'mlf'); ?>
+                        </button>
+                        <span class="mlf-loading" style="display: none;"><?php _e('Inscription en cours...', 'mlf'); ?></span>
+                    <?php endif; ?>
                 </div>
                 
                 <div id="mlf-registration-message" class="mlf-message" style="display: none;"></div>
@@ -527,45 +725,65 @@ class MLF_Frontend {
             return;
         }
 
-        // Vérifier si l'utilisateur n'est pas déjà inscrit
+        // Vérifier si l'utilisateur est déjà inscrit
         $existing_registration = MLF_Database_Manager::is_user_registered($session_id);
+        $current_user = wp_get_current_user();
+        $user_registration_data = null;
+        $is_updating_responses = false;
+        
         if ($existing_registration) {
-            wp_send_json_error(array('message' => 'Vous êtes déjà inscrit à cette session'));
-            return;
-        }
-
-        // Vérifier si la session n'est pas complète
-        if (intval($session['current_players']) >= intval($session['max_players'])) {
-            wp_send_json_error(array('message' => 'Cette session est complète'));
-            return;
+            // L'utilisateur est déjà inscrit, on permet la mise à jour des réponses au formulaire custom
+            $user_registration_data = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
+            $is_updating_responses = true;
+        } else {
+            // Vérifier si la session n'est pas complète pour une nouvelle inscription
+            if (intval($session['current_players']) >= intval($session['max_players'])) {
+                wp_send_json_error(array('message' => 'Cette session est complète'));
+                return;
+            }
         }
 
         // Collecter seulement les champs additionnels (les infos utilisateur sont automatiques)
         $registration_data = array();
-        
-        // Champs optionnels standards
-        $optional_fields = array('experience_level', 'character_name', 'character_class', 'special_requests', 'dietary_restrictions');
-        foreach ($optional_fields as $field) {
-            if (isset($_POST[$field])) {
-                if (in_array($field, array('special_requests', 'dietary_restrictions'))) {
-                    $registration_data[$field] = sanitize_textarea_field($_POST[$field]);
-                } else {
-                    $registration_data[$field] = sanitize_text_field($_POST[$field]);
-                }
-            }
-        }
 
         // Collecter tous les champs personnalisés (field_*)
+        $custom_form_data = array();
         foreach ($_POST as $key => $value) {
             if (strpos($key, 'field_') === 0) {
                 if (is_array($value)) {
-                    $registration_data[$key] = array_map('sanitize_text_field', $value);
+                    $custom_form_data[$key] = array_map('sanitize_text_field', $value);
                 } else {
-                    $registration_data[$key] = sanitize_text_field($value);
+                    $custom_form_data[$key] = sanitize_text_field($value);
                 }
             }
         }
 
+        // Si l'utilisateur est déjà inscrit, on met à jour seulement ses réponses au formulaire custom
+        if ($is_updating_responses && $user_registration_data) {
+            // Sauvegarder les réponses au formulaire custom
+            if (!empty($custom_form_data) && class_exists('MLF_Session_Forms_Manager')) {
+                $save_result = MLF_Session_Forms_Manager::save_form_response(
+                    $session_id,
+                    $user_registration_data['id'],
+                    $custom_form_data
+                );
+                
+                if ($save_result) {
+                    wp_send_json_success(array(
+                        'message' => __('Vos réponses au formulaire ont été mises à jour avec succès !', 'mlf')
+                    ));
+                } else {
+                    wp_send_json_error(array('message' => __('Erreur lors de la mise à jour de vos réponses.', 'mlf')));
+                }
+            } else {
+                wp_send_json_success(array(
+                    'message' => __('Aucune modification à enregistrer.', 'mlf')
+                ));
+            }
+            return;
+        }
+
+        // Pour les nouvelles inscriptions, procéder normalement
         // Ajouter l'ID utilisateur si connecté
         if (is_user_logged_in()) {
             $registration_data['user_id'] = get_current_user_id();
@@ -577,6 +795,20 @@ class MLF_Frontend {
         if (is_wp_error($result)) {
             wp_send_json_error(array('message' => $result->get_error_message()));
             return;
+        }
+
+        // Sauvegarder les réponses au formulaire custom si elles existent
+        if (!empty($custom_form_data) && class_exists('MLF_Session_Forms_Manager')) {
+            $save_custom_result = MLF_Session_Forms_Manager::save_form_response(
+                $session_id,
+                $result, // ID de l'inscription qui vient d'être créée
+                $custom_form_data
+            );
+            
+            if (!$save_custom_result) {
+                // Log l'erreur mais ne pas faire échouer l'inscription
+                error_log('MLF: Erreur lors de la sauvegarde du formulaire custom pour la session ' . $session_id);
+            }
         }
 
         // Récupérer les données mises à jour de la session
@@ -592,6 +824,63 @@ class MLF_Frontend {
                 'is_full' => intval($updated_session['current_players']) >= intval($updated_session['max_players'])
             )
         ));
+    }
+
+    /**
+     * Handle custom form responses update for registered users.
+     */
+    public function handle_update_custom_responses() {
+        // Vérifier l'utilisateur connecté
+        if (!is_user_logged_in()) {
+            wp_send_json_error(array('message' => 'Vous devez être connecté.'));
+            return;
+        }
+
+        // Vérifier le nonce
+        if (!wp_verify_nonce($_POST['mlf_responses_nonce'], 'mlf_update_responses')) {
+            wp_send_json_error(array('message' => 'Erreur de sécurité'));
+            return;
+        }
+
+        $session_id = intval($_POST['session_id']);
+        $registration_id = intval($_POST['registration_id']);
+        $current_user = wp_get_current_user();
+
+        // Vérifier que l'utilisateur est bien inscrit à cette session
+        $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
+        if (!$existing_registration || $existing_registration['id'] != $registration_id) {
+            wp_send_json_error(array('message' => 'Vous n\'êtes pas inscrit à cette session.'));
+            return;
+        }
+
+        // Collecter les données du formulaire custom
+        $custom_form_data = array();
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'field_') === 0) {
+                if (is_array($value)) {
+                    $custom_form_data[$key] = array_map('sanitize_text_field', $value);
+                } else {
+                    $custom_form_data[$key] = sanitize_text_field($value);
+                }
+            }
+        }
+
+        // Sauvegarder les réponses
+        if (!empty($custom_form_data) && class_exists('MLF_Session_Forms_Manager')) {
+            $save_result = MLF_Session_Forms_Manager::save_form_response(
+                $session_id,
+                $registration_id,
+                $custom_form_data
+            );
+            
+            if ($save_result) {
+                wp_send_json_success(array('message' => 'Vos réponses ont été mises à jour avec succès.'));
+            } else {
+                wp_send_json_error(array('message' => 'Erreur lors de la sauvegarde.'));
+            }
+        } else {
+            wp_send_json_error(array('message' => 'Aucune donnée à sauvegarder.'));
+        }
     }
 
     /**
@@ -634,8 +923,19 @@ class MLF_Frontend {
         ob_start();
         ?>
         <div class="mlf-session-details-page">
+            <?php
+            // Afficher le message de succès si mis à jour
+            if (isset($_GET['mlf_message']) && $_GET['mlf_message'] === 'updated') {
+                ?>
+                <div class="mlf-success-message">
+                    <p><strong><?php _e('✅ Vos réponses ont été mises à jour avec succès !', 'mlf'); ?></strong></p>
+                </div>
+                <?php
+            }
+            ?>
+            
             <div class="mlf-breadcrumb">
-                <a href="<?php echo esc_url(remove_query_arg(array('action', 'session_id'))); ?>" class="mlf-back-btn">
+                <a href="<?php echo esc_url(remove_query_arg(array('action', 'session_id', 'mlf_message'))); ?>" class="mlf-back-btn">
                     ← <?php _e('Retour aux sessions', 'mlf'); ?>
                 </a>
             </div>
@@ -775,13 +1075,166 @@ class MLF_Frontend {
                 </div>
                 
                 <?php
-                // Afficher les fiches de personnage pour les joueurs inscrits
+                // Afficher le formulaire custom et les fiches de personnage pour les joueurs inscrits
                 if (is_user_logged_in()) {
                     $current_user = wp_get_current_user();
                     $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
                     
                     if ($existing_registration) {
-                        // L'utilisateur est inscrit, afficher ses fiches de personnage
+                        // L'utilisateur est inscrit, afficher le formulaire custom s'il existe
+                        if (class_exists('MLF_Session_Forms_Manager')) {
+                            $custom_form = MLF_Session_Forms_Manager::get_session_form($session_id);
+                            if ($custom_form && !empty($custom_form['form_fields'])) {
+                                $existing_custom_responses = MLF_Session_Forms_Manager::get_form_response($session_id, $existing_registration['id']);
+                                ?>
+                                <div class="mlf-registered-user-form">
+                                    <h3><?php echo esc_html($custom_form['form_title'] ?? __('Formulaire spécifique à cette session', 'mlf')); ?></h3>
+                                    <?php if (!empty($custom_form['form_description'])): ?>
+                                        <p class="mlf-form-description"><?php echo wp_kses_post($custom_form['form_description']); ?></p>
+                                    <?php endif; ?>
+                                    
+                                    <div class="mlf-registration-status-notice">
+                                        <p><strong><?php _e('Vous êtes inscrit à cette session.', 'mlf'); ?></strong></p>
+                                        <p><em><?php _e('Vous pouvez consulter ou modifier vos réponses ci-dessous.', 'mlf'); ?></em></p>
+                                    </div>
+                                    
+                                    <form class="mlf-custom-form-readonly" method="post" action="">
+                                        <?php wp_nonce_field('mlf_update_responses', 'mlf_responses_nonce'); ?>
+                                        <input type="hidden" name="action" value="mlf_update_custom_responses" />
+                                        <input type="hidden" name="session_id" value="<?php echo esc_attr($session_id); ?>" />
+                                        <input type="hidden" name="registration_id" value="<?php echo esc_attr($existing_registration['id']); ?>" />
+                                        
+                                        <?php
+                                        foreach ($custom_form['form_fields'] as $field_index => $field) {
+                                            $field_name = 'field_' . $field_index;
+                                            $field_value = '';
+                                            
+                                            // Pré-remplir avec les réponses existantes
+                                            if ($existing_custom_responses && isset($existing_custom_responses['response_data'][$field_name])) {
+                                                $field_value = $existing_custom_responses['response_data'][$field_name];
+                                            }
+                                            
+                                            echo '<div class="mlf-form-group mlf-custom-field">';
+                                            echo '<label for="' . esc_attr($field_name) . '">';
+                                            echo esc_html($field['label'] ?? '');
+                                            if (!empty($field['required'])) {
+                                                echo ' <span class="mlf-required">*</span>';
+                                            }
+                                            echo '</label>';
+                                            
+                                            switch ($field['type']) {
+                                                case 'text':
+                                                case 'email':
+                                                case 'number':
+                                                    echo '<input type="' . esc_attr($field['type']) . '" ';
+                                                    echo 'id="' . esc_attr($field_name) . '" ';
+                                                    echo 'name="' . esc_attr($field_name) . '" ';
+                                                    echo 'value="' . esc_attr($field_value) . '" ';
+                                                    if (!empty($field['placeholder'])) {
+                                                        echo 'placeholder="' . esc_attr($field['placeholder']) . '" ';
+                                                    }
+                                                    if (!empty($field['required'])) {
+                                                        echo 'required ';
+                                                    }
+                                                    echo '/>';
+                                                    break;
+                                                    
+                                                case 'textarea':
+                                                    echo '<textarea ';
+                                                    echo 'id="' . esc_attr($field_name) . '" ';
+                                                    echo 'name="' . esc_attr($field_name) . '" ';
+                                                    echo 'rows="' . esc_attr($field['rows'] ?? 3) . '" ';
+                                                    if (!empty($field['placeholder'])) {
+                                                        echo 'placeholder="' . esc_attr($field['placeholder']) . '" ';
+                                                    }
+                                                    if (!empty($field['required'])) {
+                                                        echo 'required ';
+                                                    }
+                                                    echo '>' . esc_textarea($field_value) . '</textarea>';
+                                                    break;
+                                                    
+                                                case 'select':
+                                                    echo '<select ';
+                                                    echo 'id="' . esc_attr($field_name) . '" ';
+                                                    echo 'name="' . esc_attr($field_name) . '" ';
+                                                    if (!empty($field['required'])) {
+                                                        echo 'required ';
+                                                    }
+                                                    echo '>';
+                                                    
+                                                    if (!empty($field['placeholder'])) {
+                                                        echo '<option value="">' . esc_html($field['placeholder']) . '</option>';
+                                                    }
+                                                    
+                                                    if (!empty($field['options'])) {
+                                                        foreach ($field['options'] as $option) {
+                                                            $selected = ($field_value === $option) ? 'selected' : '';
+                                                            echo '<option value="' . esc_attr($option) . '" ' . $selected . '>' . esc_html($option) . '</option>';
+                                                        }
+                                                    }
+                                                    echo '</select>';
+                                                    break;
+                                                    
+                                                case 'radio':
+                                                    if (!empty($field['options'])) {
+                                                        echo '<div class="mlf-radio-group">';
+                                                        foreach ($field['options'] as $option_index => $option) {
+                                                            $radio_id = $field_name . '_' . $option_index;
+                                                            $checked = ($field_value === $option) ? 'checked' : '';
+                                                            echo '<label class="mlf-radio-label">';
+                                                            echo '<input type="radio" ';
+                                                            echo 'id="' . esc_attr($radio_id) . '" ';
+                                                            echo 'name="' . esc_attr($field_name) . '" ';
+                                                            echo 'value="' . esc_attr($option) . '" ';
+                                                            echo $checked . ' ';
+                                                            if (!empty($field['required'])) {
+                                                                echo 'required ';
+                                                            }
+                                                            echo '/>';
+                                                            echo '<span>' . esc_html($option) . '</span>';
+                                                            echo '</label>';
+                                                        }
+                                                        echo '</div>';
+                                                    }
+                                                    break;
+                                                    
+                                                case 'checkbox':
+                                                    $checked = !empty($field_value) ? 'checked' : '';
+                                                    echo '<label class="mlf-checkbox-label">';
+                                                    echo '<input type="checkbox" ';
+                                                    echo 'id="' . esc_attr($field_name) . '" ';
+                                                    echo 'name="' . esc_attr($field_name) . '" ';
+                                                    echo 'value="1" ';
+                                                    echo $checked . ' ';
+                                                    if (!empty($field['required'])) {
+                                                        echo 'required ';
+                                                    }
+                                                    echo '/>';
+                                                    echo '<span>' . esc_html($field['label'] ?? '') . '</span>';
+                                                    echo '</label>';
+                                                    break;
+                                            }
+                                            
+                                            if (!empty($field['description'])) {
+                                                echo '<small class="mlf-field-description">' . esc_html($field['description']) . '</small>';
+                                            }
+                                            
+                                            echo '</div>';
+                                        }
+                                        ?>
+                                        
+                                        <div class="mlf-form-actions">
+                                            <button type="submit" class="mlf-btn mlf-btn-primary">
+                                                <?php _e('Mettre à jour mes réponses', 'mlf'); ?>
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                                <?php
+                            }
+                        }
+                        
+                        // Afficher ses fiches de personnage
                         echo $this->display_user_character_sheets($session_id, $current_user->ID);
                     }
                 }
@@ -956,38 +1409,6 @@ class MLF_Frontend {
                                        value="<?php echo esc_attr($user_phone); ?>" 
                                        placeholder="<?php _e('Optionnel - vous pouvez le modifier', 'mlf'); ?>" />
                                 <small class="mlf-field-note"><?php _e('Vous pouvez modifier ce champ si nécessaire', 'mlf'); ?></small>
-                            </div>
-                        </div>
-                        
-                        <div class="mlf-session-info-section">
-                            <h3><?php _e('Informations pour cette session', 'mlf'); ?></h3>
-                            
-                            <div class="mlf-form-group">
-                                <label for="experience_level"><?php _e('Votre niveau d\'expérience', 'mlf'); ?></label>
-                                <select id="experience_level" name="experience_level">
-                                    <option value="debutant"><?php _e('Débutant', 'mlf'); ?></option>
-                                    <option value="intermediaire" selected><?php _e('Intermédiaire', 'mlf'); ?></option>
-                                    <option value="avance"><?php _e('Avancé', 'mlf'); ?></option>
-                                    <option value="expert"><?php _e('Expert', 'mlf'); ?></option>
-                                </select>
-                            </div>
-                            
-                            <div class="mlf-form-group">
-                                <label for="character_name"><?php _e('Nom du personnage souhaité', 'mlf'); ?></label>
-                                <input type="text" id="character_name" name="character_name" 
-                                       placeholder="<?php _e('Ex: Lady Catherine, Le Baron...', 'mlf'); ?>" />
-                            </div>
-                            
-                            <div class="mlf-form-group">
-                                <label for="special_requests"><?php _e('Demandes spéciales ou préférences', 'mlf'); ?></label>
-                                <textarea id="special_requests" name="special_requests" rows="3" 
-                                          placeholder="<?php _e('Préférences de rôle, limitations physiques, etc.', 'mlf'); ?>"></textarea>
-                            </div>
-                            
-                            <div class="mlf-form-group">
-                                <label for="dietary_restrictions"><?php _e('Restrictions alimentaires', 'mlf'); ?></label>
-                                <textarea id="dietary_restrictions" name="dietary_restrictions" rows="2" 
-                                          placeholder="<?php _e('Allergies, régimes spéciaux...', 'mlf'); ?>"></textarea>
                             </div>
                         </div>
 

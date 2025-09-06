@@ -24,6 +24,9 @@ class MLF_Activator {
         self::create_custom_forms_tables();
         self::create_character_sheets_table();
         
+        // Run database migrations if needed
+        self::run_database_migrations();
+        
         // Set default options
         self::set_default_options();
         
@@ -173,7 +176,7 @@ class MLF_Activator {
      * Get the database version for upgrade management.
      */
     public static function get_database_version() {
-        return '1.0.0';
+        return '1.1.0'; // Incrémenté pour inclure la colonne user_id
     }
     
     /**
@@ -189,6 +192,144 @@ class MLF_Activator {
      */
     public static function update_database_version() {
         update_option('mlf_database_version', self::get_database_version());
+    }
+    
+    /**
+     * Run database migrations based on current version.
+     */
+    public static function run_database_migrations() {
+        $current_version = get_option('mlf_database_version', '0.0.0');
+        
+        // Migration vers 1.1.0 - Ajouter user_id à custom_form_responses
+        if (version_compare($current_version, '1.1.0', '<')) {
+            self::migrate_to_1_1_0();
+        }
+        
+        // Mettre à jour la version
+        self::update_database_version();
+    }
+    
+    /**
+     * Migration vers version 1.1.0
+     * Ajoute la colonne user_id à wp_mlf_custom_form_responses
+     */
+    private static function migrate_to_1_1_0() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'mlf_custom_form_responses';
+        
+        // Vérifier si la table existe
+        $table_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = %s
+        ", DB_NAME, $table_name));
+        
+        if (!$table_exists) {
+            // Table n'existe pas, la créer avec la nouvelle structure
+            self::create_custom_form_responses_table();
+            return;
+        }
+        
+        // Vérifier si la colonne user_id existe déjà
+        $column_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'user_id'
+        ", DB_NAME, $table_name));
+        
+        if (!$column_exists) {
+            // Ajouter la colonne user_id
+            $wpdb->query("ALTER TABLE $table_name 
+                         ADD COLUMN user_id int(11) NOT NULL COMMENT 'User who submitted the response' AFTER registration_id,
+                         ADD KEY user_id (user_id)");
+            
+            // Populer la colonne avec les données existantes
+            $wpdb->query("UPDATE $table_name r
+                         INNER JOIN {$wpdb->prefix}mlf_player_registrations p ON r.registration_id = p.id
+                         SET r.user_id = p.user_id
+                         WHERE r.user_id = 0 OR r.user_id IS NULL");
+        }
+    }
+    
+    /**
+     * Vérifier et réparer la structure de la base de données
+     * Méthode utilitaire pour s'assurer que la DB est toujours fonctionnelle
+     */
+    public static function verify_and_repair_database() {
+        global $wpdb;
+        
+        $issues_found = [];
+        $fixes_applied = [];
+        
+        // 1. Vérifier table wp_mlf_custom_form_responses
+        $table_name = $wpdb->prefix . 'mlf_custom_form_responses';
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'");
+        
+        if (!$table_exists) {
+            self::create_custom_form_responses_table();
+            $fixes_applied[] = "Table $table_name créée";
+        } else {
+            // Vérifier colonne user_id
+            $columns = $wpdb->get_results("DESCRIBE $table_name");
+            $has_user_id = false;
+            foreach ($columns as $col) {
+                if ($col->Field === 'user_id') {
+                    $has_user_id = true;
+                    break;
+                }
+            }
+            
+            if (!$has_user_id) {
+                $issues_found[] = "Colonne user_id manquante dans $table_name";
+                
+                // Ajouter la colonne
+                $result = $wpdb->query("ALTER TABLE $table_name 
+                                       ADD COLUMN user_id int(11) NOT NULL COMMENT 'User who submitted the response' AFTER registration_id,
+                                       ADD KEY user_id (user_id)");
+                
+                if ($result !== false) {
+                    $fixes_applied[] = "Colonne user_id ajoutée à $table_name";
+                    
+                    // Populer avec les données existantes
+                    $updated = $wpdb->query("UPDATE $table_name r
+                                           INNER JOIN {$wpdb->prefix}mlf_player_registrations p ON r.registration_id = p.id
+                                           SET r.user_id = p.user_id
+                                           WHERE r.user_id = 0 OR r.user_id IS NULL");
+                    
+                    if ($updated !== false) {
+                        $fixes_applied[] = "user_id populé pour $updated réponses existantes";
+                    }
+                }
+            }
+        }
+        
+        // 2. Vérifier les autres tables principales
+        $required_tables = [
+            'mlf_game_sessions' => 'create_game_sessions_table',
+            'mlf_player_registrations' => 'create_player_registrations_table',
+            'mlf_custom_forms' => 'create_custom_forms_table'
+        ];
+        
+        foreach ($required_tables as $table_suffix => $create_method) {
+            $full_table_name = $wpdb->prefix . $table_suffix;
+            $exists = $wpdb->get_var("SHOW TABLES LIKE '$full_table_name'");
+            
+            if (!$exists) {
+                $issues_found[] = "Table $full_table_name manquante";
+                self::$create_method();
+                $fixes_applied[] = "Table $full_table_name créée";
+            }
+        }
+        
+        return [
+            'issues_found' => $issues_found,
+            'fixes_applied' => $fixes_applied,
+            'status' => empty($issues_found) ? 'ok' : 'repaired'
+        ];
     }
 
     /**
@@ -242,11 +383,13 @@ class MLF_Activator {
             id int(11) NOT NULL AUTO_INCREMENT,
             session_id int(11) NOT NULL,
             registration_id int(11) NOT NULL,
+            user_id int(11) NOT NULL COMMENT 'User who submitted the response',
             response_data longtext NOT NULL COMMENT 'JSON data for form responses',
             submitted_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY session_id (session_id),
             KEY registration_id (registration_id),
+            KEY user_id (user_id),
             UNIQUE KEY unique_response (session_id, registration_id),
             FOREIGN KEY (session_id) REFERENCES {$wpdb->prefix}mlf_game_sessions(id) ON DELETE CASCADE,
             FOREIGN KEY (registration_id) REFERENCES {$wpdb->prefix}mlf_player_registrations(id) ON DELETE CASCADE

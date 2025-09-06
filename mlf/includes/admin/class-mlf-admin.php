@@ -24,6 +24,7 @@ class MLF_Admin {
             add_action('wp_ajax_mlf_delete_session', array($this, 'handle_delete_session'));
             add_action('wp_ajax_mlf_update_session', array($this, 'handle_update_session'));
             add_action('wp_ajax_mlf_confirm_registration', array($this, 'handle_confirm_registration'));
+            add_action('wp_ajax_mlf_get_response_details', array($this, 'handle_get_response_details'));
             
             // Backup handler for character sheet upload in case the main one doesn't work
             add_action('wp_ajax_mlf_upload_character_sheet', array($this, 'handle_admin_upload_character_sheet'));
@@ -93,6 +94,24 @@ class MLF_Admin {
             'manage_options',
             'mlf-character-sheets',
             array($this, 'render_character_sheets_page')
+        );
+        
+        add_submenu_page(
+            'mlf-sessions',
+            __('Réponses aux formulaires', 'mlf'),
+            __('Réponses aux formulaires', 'mlf'),
+            'manage_options',
+            'mlf-form-responses',
+            array($this, 'display_form_responses_page')
+        );
+        
+        add_submenu_page(
+            'mlf-sessions',
+            __('Diagnostic système', 'mlf'),
+            __('Diagnostic système', 'mlf'),
+            'manage_options',
+            'mlf-system-diagnostic',
+            array($this, 'display_system_diagnostic_page')
         );
         
         add_submenu_page(
@@ -1194,16 +1213,52 @@ class MLF_Admin {
 
         // Initialiser le gestionnaire de formulaires spécifiques aux sessions
         if (!class_exists('MLF_Session_Forms_Manager')) {
-            require_once MLF_PLUGIN_DIR . 'includes/class-mlf-session-forms-manager.php';
+            require_once MLF_PLUGIN_PATH . 'includes/class-mlf-session-forms-manager.php';
         }
         $session_forms_manager = new MLF_Session_Forms_Manager();
 
         // Traitement des soumissions de formulaire
         if (isset($_POST['submit_session_form']) && wp_verify_nonce($_POST['mlf_session_form_nonce'], 'mlf_session_form')) {
+            // Traitement des champs pour éviter les problèmes d'encodage et d'échappement
+            $processed_fields = array();
+            
+            // Dé-échapper les données POST (WordPress ajoute automatiquement des slashes)
+            $form_fields_raw = wp_unslash($_POST['form_fields'] ?? array());
+            
+            if (!empty($form_fields_raw) && is_array($form_fields_raw)) {
+                foreach ($form_fields_raw as $index => $field) {
+                    if (empty($field['label']) || empty($field['type'])) {
+                        continue; // Ignorer les champs incomplets
+                    }
+                    
+                    $processed_field = array(
+                        'type' => sanitize_text_field($field['type']),
+                        'name' => 'field_' . $index,
+                        'label' => sanitize_text_field($field['label']), // sanitize_text_field gère déjà l'échappement
+                        'required' => !empty($field['required'])
+                    );
+                    
+                    // Traitement des options pour select
+                    if ($field['type'] === 'select' && !empty($field['options'])) {
+                        $options_lines = explode("\n", str_replace(["\r\n", "\r"], "\n", $field['options']));
+                        $processed_field['options'] = array_map('trim', array_filter($options_lines));
+                    }
+                    
+                    // Ajouter placeholder selon le type
+                    if ($field['type'] === 'text') {
+                        $processed_field['placeholder'] = 'Saisissez ' . strtolower($processed_field['label']) . '...';
+                    } elseif ($field['type'] === 'textarea') {
+                        $processed_field['placeholder'] = 'Décrivez...';
+                    }
+                    
+                    $processed_fields[] = $processed_field;
+                }
+            }
+            
             $form_data = array(
-                'form_title' => sanitize_text_field($_POST['form_title']),
-                'form_description' => sanitize_textarea_field($_POST['form_description']),
-                'form_fields' => json_encode($_POST['form_fields'] ?? array()),
+                'form_title' => sanitize_text_field(wp_unslash($_POST['form_title'])),
+                'form_description' => sanitize_textarea_field(wp_unslash($_POST['form_description'])),
+                'form_fields' => $processed_fields, // CORRECTION: Passer l'array directement, pas le JSON
                 'is_active' => isset($_POST['is_active']) ? 1 : 0
             );
 
@@ -1260,7 +1315,12 @@ class MLF_Admin {
                     <?php
                     $fields = array();
                     if ($existing_form && !empty($existing_form['form_fields'])) {
-                        $fields = json_decode($existing_form['form_fields'], true) ?: array();
+                        // form_fields est déjà un array décodé par MLF_Session_Forms_Manager
+                        if (is_array($existing_form['form_fields'])) {
+                            $fields = $existing_form['form_fields'];
+                        } else {
+                            $fields = json_decode($existing_form['form_fields'], true) ?: array();
+                        }
                     }
                     
                     // Si aucun champ, ajouter les champs par défaut
@@ -1874,5 +1934,438 @@ class MLF_Admin {
         }
         
         wp_send_json_success(array('message' => 'Fiche uploadée avec succès'));
+    }
+
+    /**
+     * Display form responses page
+     */
+    public function display_form_responses_page() {
+        global $wpdb;
+        
+        if (isset($_GET['view_response'])) {
+            $this->display_response_details();
+            return;
+        }
+        
+        $responses_table = $wpdb->prefix . 'mlf_custom_form_responses';
+        $users_table = $wpdb->prefix . 'users';
+        $registrations_table = $wpdb->prefix . 'mlf_player_registrations';
+        
+        $responses = $wpdb->get_results("
+            SELECT r.*, u.display_name, u.user_email, reg.player_name, s.session_name
+            FROM $responses_table r
+            LEFT JOIN $registrations_table reg ON r.registration_id = reg.id
+            LEFT JOIN $users_table u ON reg.user_id = u.ID
+            LEFT JOIN {$wpdb->prefix}mlf_game_sessions s ON r.session_id = s.id
+            ORDER BY r.submitted_at DESC
+        ", ARRAY_A);
+        
+        echo '<div class="wrap">';
+        echo '<h1>Réponses aux formulaires de session</h1>';
+        
+        if (empty($responses)) {
+            echo '<p>Aucune réponse aux formulaires trouvée.</p>';
+        } else {
+            echo '<table class="wp-list-table widefat fixed striped">';
+            echo '<thead><tr>';
+            echo '<th>ID</th>';
+            echo '<th>Session</th>';
+            echo '<th>Utilisateur</th>';
+            echo '<th>Date de soumission</th>';
+            echo '<th>Actions</th>';
+            echo '</tr></thead>';
+            echo '<tbody>';
+            
+            foreach ($responses as $response) {
+                // Récupérer le nom de la session
+                $session_name = 'Session ' . $response['session_id'];
+                require_once dirname(__DIR__) . '/class-mlf-session-forms-manager.php';
+                $session_form = MLF_Session_Forms_Manager::get_session_form($response['session_id']);
+                if ($session_form) {
+                    $session_name = $session_form['form_title'];
+                }
+                
+                echo '<tr>';
+                echo '<td>' . $response['id'] . '</td>';
+                echo '<td>' . esc_html($session_name) . '</td>';
+                echo '<td>' . ($response['display_name'] ?: 'Utilisateur ' . $response['user_id']) . '</td>';
+                echo '<td>' . $response['submitted_at'] . '</td>';
+                echo '<td>';
+                echo '<a href="' . add_query_arg('view_response', $response['id']) . '" class="button button-small">Voir les détails</a>';
+                echo '</td>';
+                echo '</tr>';
+            }
+            
+            echo '</tbody>';
+            echo '</table>';
+        }
+        
+        echo '</div>';
+    }
+
+    /**
+     * Display response details
+     */
+    public function display_response_details() {
+        global $wpdb;
+        
+        $response_id = intval($_GET['view_response']);
+        $responses_table = $wpdb->prefix . 'mlf_custom_form_responses';
+        $users_table = $wpdb->prefix . 'users';
+        
+        $response = $wpdb->get_row($wpdb->prepare("
+            SELECT r.*, u.display_name, u.user_email 
+            FROM $responses_table r
+            LEFT JOIN $users_table u ON r.user_id = u.ID
+            WHERE r.id = %d
+        ", $response_id), ARRAY_A);
+        
+        if (!$response) {
+            echo '<div class="wrap">';
+            echo '<h1>Erreur</h1>';
+            echo '<p>Aucune réponse trouvée avec l\'ID ' . $response_id . '</p>';
+            echo '<a href="' . admin_url('admin.php?page=mlf-form-responses') . '" class="button">Retour</a>';
+            echo '</div>';
+            return;
+        }
+        
+        // Récupérer le formulaire
+        require_once dirname(__DIR__) . '/class-mlf-session-forms-manager.php';
+        $session_form = MLF_Session_Forms_Manager::get_session_form($response['session_id']);
+        
+        echo '<div class="wrap">';
+        echo '<h1>Détails de la réponse #' . $response_id . '</h1>';
+        
+        echo '<p><a href="' . admin_url('admin.php?page=mlf-form-responses') . '" class="button">← Retour à la liste</a></p>';
+        
+        echo '<div class="card" style="max-width: none;">';
+        echo '<h3>Informations générales</h3>';
+        echo '<p><strong>Utilisateur:</strong> ' . ($response['display_name'] ?: 'Utilisateur ' . $response['user_id']) . '<br>';
+        echo '<strong>Email:</strong> ' . ($response['user_email'] ?: 'Non renseigné') . '<br>';
+        echo '<strong>Date de soumission:</strong> ' . $response['submitted_at'] . '</p>';
+        echo '</div>';
+        
+        if (!$session_form) {
+            echo '<div class="notice notice-error">';
+            echo '<p>Impossible de récupérer le formulaire pour la session ' . $response['session_id'] . '</p>';
+            echo '</div>';
+        } else {
+            echo '<div class="card" style="max-width: none;">';
+            echo '<h3>' . esc_html($session_form['form_title']) . '</h3>';
+            
+            $response_data = json_decode($response['response_data'], true);
+            
+            if (!$response_data) {
+                echo '<div class="notice notice-error">';
+                echo '<p>Erreur de décodage des réponses: ' . json_last_error_msg() . '</p>';
+                echo '</div>';
+            } else {
+                echo '<table class="wp-list-table widefat fixed striped">';
+                echo '<thead><tr><th>Question</th><th>Réponse</th></tr></thead>';
+                echo '<tbody>';
+                
+                $form_fields = $session_form['form_fields'];
+                if (is_array($form_fields)) {
+                    foreach ($form_fields as $index => $field) {
+                        $field_key = 'field_' . $index;
+                        $response_value = isset($response_data[$field_key]) ? $response_data[$field_key] : '';
+                        
+                        echo '<tr>';
+                        echo '<td><strong>' . esc_html($field['label']) . '</strong><br>';
+                        echo '<small>Type: ' . $field['type'] . ($field['required'] ? ' (obligatoire)' : ' (optionnel)') . '</small></td>';
+                        echo '<td>';
+                        
+                        if (empty($response_value)) {
+                            echo '<em>Aucune réponse</em>';
+                        } elseif (is_array($response_value)) {
+                            if ($field['type'] === 'checkbox' && isset($field['options'])) {
+                                $selected_options = array();
+                                foreach ($response_value as $value) {
+                                    if (in_array($value, $field['options'])) {
+                                        $selected_options[] = $value;
+                                    }
+                                }
+                                echo esc_html(implode(', ', $selected_options));
+                            } else {
+                                echo esc_html(implode(', ', $response_value));
+                            }
+                        } else {
+                            if ($field['type'] === 'select' && isset($field['options'])) {
+                                if (in_array($response_value, $field['options'])) {
+                                    echo esc_html($response_value);
+                                } else {
+                                    echo '<em>Valeur invalide: ' . esc_html($response_value) . '</em>';
+                                }
+                            } else {
+                                echo esc_html($response_value);
+                            }
+                        }
+                        
+                        echo '</td>';
+                        echo '</tr>';
+                    }
+                } else {
+                    echo '<tr><td colspan="2">Erreur: structure du formulaire invalide</td></tr>';
+                }
+                
+                echo '</tbody>';
+                echo '</table>';
+            }
+            echo '</div>';
+        }
+        
+        echo '</div>';
+    }
+
+    /**
+     * Handle AJAX request for response details (if needed for future features)
+     */
+    public function handle_get_response_details() {
+        check_ajax_referer('mlf_admin_responses', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permissions insuffisantes'));
+        }
+        
+        $response_id = intval($_POST['response_id']);
+        
+        global $wpdb;
+        $responses_table = $wpdb->prefix . 'mlf_custom_form_responses';
+        $users_table = $wpdb->prefix . 'users';
+        
+        $response = $wpdb->get_row($wpdb->prepare("
+            SELECT r.*, u.display_name, u.user_email 
+            FROM $responses_table r
+            LEFT JOIN $users_table u ON r.user_id = u.ID
+            WHERE r.id = %d
+        ", $response_id), ARRAY_A);
+        
+        if (!$response) {
+            wp_send_json_error(array('message' => 'Réponse non trouvée'));
+        }
+        
+        require_once dirname(__DIR__) . '/class-mlf-session-forms-manager.php';
+        $session_form = MLF_Session_Forms_Manager::get_session_form($response['session_id']);
+        
+        if (!$session_form) {
+            wp_send_json_error(array('message' => 'Formulaire non trouvé'));
+        }
+        
+        $response_data = json_decode($response['response_data'], true);
+        
+        if (!$response_data) {
+            wp_send_json_error(array('message' => 'Erreur de décodage des réponses'));
+        }
+        
+        $html = '<h3>Détails de la réponse</h3>';
+        $html .= '<table class="wp-list-table widefat fixed striped">';
+        $html .= '<thead><tr><th>Question</th><th>Réponse</th></tr></thead>';
+        $html .= '<tbody>';
+        
+        $form_fields = $session_form['form_fields'];
+        if (is_array($form_fields)) {
+            foreach ($form_fields as $index => $field) {
+                $field_key = 'field_' . $index;
+                $response_value = isset($response_data[$field_key]) ? $response_data[$field_key] : '';
+                
+                $html .= '<tr>';
+                $html .= '<td><strong>' . esc_html($field['label']) . '</strong></td>';
+                $html .= '<td>';
+                
+                if (empty($response_value)) {
+                    $html .= '<em>Aucune réponse</em>';
+                } elseif (is_array($response_value)) {
+                    $html .= esc_html(implode(', ', $response_value));
+                } else {
+                    $html .= esc_html($response_value);
+                }
+                
+                $html .= '</td>';
+                $html .= '</tr>';
+            }
+        }
+        
+        $html .= '</tbody>';
+        $html .= '</table>';
+        
+        wp_send_json_success(array('html' => $html));
+    }
+    
+    /**
+     * Display system diagnostic page
+     */
+    public function display_system_diagnostic_page() {
+        // Charger MLF_Activator si pas déjà fait
+        if (!class_exists('MLF_Activator')) {
+            require_once(MLF_PLUGIN_PATH . 'includes/class-mlf-activator.php');
+        }
+        
+        $action_performed = false;
+        $action_result = [];
+        
+        // Traiter les actions POST
+        if (isset($_POST['action']) && wp_verify_nonce($_POST['mlf_diagnostic_nonce'], 'mlf_diagnostic_action')) {
+            switch ($_POST['action']) {
+                case 'run_health_check':
+                    $action_result = MLF_Activator::verify_and_repair_database();
+                    $action_performed = 'health_check';
+                    break;
+                    
+                case 'force_migration':
+                    MLF_Activator::run_database_migrations();
+                    $action_result = ['status' => 'migrations_executed'];
+                    $action_performed = 'migration';
+                    break;
+                    
+                case 'recreate_tables':
+                    MLF_Activator::activate();
+                    $action_result = ['status' => 'tables_recreated'];
+                    $action_performed = 'recreate';
+                    break;
+            }
+        }
+        
+        // Obtenir les informations actuelles
+        global $wpdb;
+        $current_version = get_option('mlf_database_version', '0.0.0');
+        $target_version = MLF_Activator::get_database_version();
+        $needs_update = MLF_Activator::needs_database_update();
+        
+        ?>
+        <div class="wrap">
+            <h1>🔧 Diagnostic Système MLF</h1>
+            
+            <?php if ($action_performed): ?>
+                <div class="notice notice-success">
+                    <p><strong>Action exécutée :</strong> 
+                    <?php 
+                        switch($action_performed) {
+                            case 'health_check':
+                                echo 'Vérification de santé terminée';
+                                if (!empty($action_result['fixes_applied'])) {
+                                    echo ' - ' . count($action_result['fixes_applied']) . ' corrections appliquées';
+                                }
+                                break;
+                            case 'migration':
+                                echo 'Migrations exécutées avec succès';
+                                break;
+                            case 'recreate':
+                                echo 'Tables recréées avec succès';
+                                break;
+                        }
+                    ?>
+                    </p>
+                </div>
+            <?php endif; ?>
+            
+            <div class="card" style="max-width: none;">
+                <h2>📊 État de la base de données</h2>
+                <table class="form-table">
+                    <tr>
+                        <th>Version actuelle</th>
+                        <td><code><?php echo esc_html($current_version); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>Version cible</th>
+                        <td><code><?php echo esc_html($target_version); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>État</th>
+                        <td>
+                            <?php if ($needs_update): ?>
+                                <span style="color: orange;">⚠️ Mise à jour nécessaire</span>
+                            <?php else: ?>
+                                <span style="color: green;">✅ À jour</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="card" style="max-width: none;">
+                <h2>🗃️ Tables de la base de données</h2>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Table</th>
+                            <th>Statut</th>
+                            <th>Lignes</th>
+                            <th>Colonnes critiques</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        $tables_info = [
+                            'mlf_game_sessions' => ['session_name', 'game_master_id'],
+                            'mlf_player_registrations' => ['user_id', 'session_id'],
+                            'mlf_custom_forms' => ['session_id', 'form_fields'],
+                            'mlf_custom_form_responses' => ['user_id', 'registration_id', 'response_data']
+                        ];
+                        
+                        foreach ($tables_info as $table_suffix => $critical_columns) {
+                            $table_name = $wpdb->prefix . $table_suffix;
+                            $exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'");
+                            $count = $exists ? $wpdb->get_var("SELECT COUNT(*) FROM $table_name") : 0;
+                            $columns = $exists ? $wpdb->get_results("DESCRIBE $table_name") : [];
+                            
+                            echo '<tr>';
+                            echo '<td><code>' . esc_html($table_name) . '</code></td>';
+                            echo '<td>' . ($exists ? '<span style="color: green;">✅ Existe</span>' : '<span style="color: red;">❌ Manquante</span>') . '</td>';
+                            echo '<td>' . esc_html($count) . '</td>';
+                            echo '<td>';
+                            
+                            if ($exists && $columns) {
+                                $found_columns = array_column($columns, 'Field');
+                                foreach ($critical_columns as $col) {
+                                    $has_col = in_array($col, $found_columns);
+                                    echo ($has_col ? '✅' : '❌') . ' ' . esc_html($col) . ' ';
+                                }
+                            } else {
+                                echo '-';
+                            }
+                            
+                            echo '</td>';
+                            echo '</tr>';
+                        }
+                        ?>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="card" style="max-width: none;">
+                <h2>🛠️ Actions de maintenance</h2>
+                <p>Utilisez ces outils pour diagnostiquer et réparer les problèmes de base de données.</p>
+                
+                <form method="post" style="display: inline-block; margin-right: 10px;">
+                    <?php wp_nonce_field('mlf_diagnostic_action', 'mlf_diagnostic_nonce'); ?>
+                    <input type="hidden" name="action" value="run_health_check" />
+                    <button type="submit" class="button button-primary">🔍 Vérification de santé</button>
+                </form>
+                
+                <?php if ($needs_update): ?>
+                <form method="post" style="display: inline-block; margin-right: 10px;">
+                    <?php wp_nonce_field('mlf_diagnostic_action', 'mlf_diagnostic_nonce'); ?>
+                    <input type="hidden" name="action" value="force_migration" />
+                    <button type="submit" class="button button-secondary">🔄 Exécuter migrations</button>
+                </form>
+                <?php endif; ?>
+                
+                <form method="post" style="display: inline-block;" onsubmit="return confirm('⚠️ Attention: Cette action va recréer toutes les tables. Continuer?');">
+                    <?php wp_nonce_field('mlf_diagnostic_action', 'mlf_diagnostic_nonce'); ?>
+                    <input type="hidden" name="action" value="recreate_tables" />
+                    <button type="submit" class="button button-secondary">🏗️ Recréer toutes les tables</button>
+                </form>
+            </div>
+            
+            <?php if ($action_performed && !empty($action_result)): ?>
+            <div class="card" style="max-width: none;">
+                <h2>📋 Résultats de l'action</h2>
+                <pre style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; white-space: pre-wrap;"><?php 
+                    echo esc_html(print_r($action_result, true)); 
+                ?></pre>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php
     }
 }
