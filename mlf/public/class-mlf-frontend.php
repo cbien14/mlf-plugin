@@ -61,10 +61,16 @@ class MLF_Frontend {
         $registration_id = intval($_POST['registration_id']);
         $current_user = wp_get_current_user();
 
-        // Vérifier que l'utilisateur est bien inscrit à cette session
+        // Vérifier que l'utilisateur est bien inscrit à cette session avec un statut confirmé
         $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
         if (!$existing_registration || $existing_registration['id'] != $registration_id) {
             wp_die(__('Vous n\'êtes pas inscrit à cette session.', 'mlf'));
+            return;
+        }
+
+        // Vérifier que l'inscription est confirmée
+        if ($existing_registration['registration_status'] !== 'confirme') {
+            wp_die(__('Votre inscription doit être confirmée par un administrateur avant de pouvoir modifier vos réponses.', 'mlf'));
             return;
         }
 
@@ -854,10 +860,16 @@ class MLF_Frontend {
         $registration_id = intval($_POST['registration_id']);
         $current_user = wp_get_current_user();
 
-        // Vérifier que l'utilisateur est bien inscrit à cette session
+        // Vérifier que l'utilisateur est bien inscrit à cette session avec un statut confirmé
         $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
         if (!$existing_registration || $existing_registration['id'] != $registration_id) {
             wp_send_json_error(array('message' => 'Vous n\'êtes pas inscrit à cette session.'));
+            return;
+        }
+
+        // Vérifier que l'inscription est confirmée
+        if ($existing_registration['registration_status'] !== 'confirme') {
+            wp_send_json_error(array('message' => 'Votre inscription doit être confirmée par un administrateur avant de pouvoir modifier vos réponses.'));
             return;
         }
 
@@ -1032,11 +1044,11 @@ class MLF_Frontend {
                     $is_full = intval($session['current_players']) >= intval($session['max_players']);
                     $user_registered = false;
                     
-                    // Vérifier si l'utilisateur est déjà inscrit
+                    // Vérifier si l'utilisateur est déjà inscrit avec un statut confirmé
                     if (is_user_logged_in()) {
                         $current_user = wp_get_current_user();
                         $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
-                        $user_registered = !empty($existing_registration);
+                        $user_registered = !empty($existing_registration) && $existing_registration['registration_status'] === 'confirme';
                     }
                     
                     if (!is_user_logged_in()): ?>
@@ -1050,11 +1062,45 @@ class MLF_Frontend {
                         <div class="mlf-user-registered">
                             <p class="mlf-registration-status">
                                 <span class="mlf-status-icon">✅</span>
-                                <?php _e('Vous êtes déjà inscrit à cette session', 'mlf'); ?>
+                                <?php _e('Vous êtes inscrit à cette session', 'mlf'); ?>
                             </p>
                             <span class="mlf-btn mlf-btn-success mlf-btn-large mlf-btn-disabled">
                                 <?php _e('Inscription confirmée', 'mlf'); ?>
                             </span>
+                        </div>
+                    <?php elseif (!empty($existing_registration)): ?>
+                        <div class="mlf-user-pending">
+                            <p class="mlf-registration-status">
+                                <?php 
+                                switch($existing_registration['registration_status']) {
+                                    case 'en_attente':
+                                        echo '<span class="mlf-status-icon">⏳</span>';
+                                        _e('Votre inscription est en attente de validation', 'mlf');
+                                        break;
+                                    case 'annule':
+                                        echo '<span class="mlf-status-icon">❌</span>';
+                                        _e('Votre inscription a été annulée', 'mlf');
+                                        break;
+                                    case 'liste_attente':
+                                        echo '<span class="mlf-status-icon">📋</span>';
+                                        _e('Vous êtes sur la liste d\'attente', 'mlf');
+                                        break;
+                                    default:
+                                        echo '<span class="mlf-status-icon">❓</span>';
+                                        printf(__('Statut: %s', 'mlf'), esc_html($existing_registration['registration_status']));
+                                }
+                                ?>
+                            </p>
+                            <?php if ($existing_registration['registration_status'] === 'annule'): ?>
+                                <a href="<?php echo esc_url(add_query_arg(array('action' => 'register', 'session_id' => $session_id))); ?>" 
+                                   class="mlf-btn mlf-btn-primary mlf-btn-large">
+                                    <?php _e('S\'inscrire à nouveau', 'mlf'); ?>
+                                </a>
+                            <?php else: ?>
+                                <span class="mlf-btn mlf-btn-secondary mlf-btn-large mlf-btn-disabled">
+                                    <?php _e('En attente', 'mlf'); ?>
+                                </span>
+                            <?php endif; ?>
                         </div>
                     <?php elseif ($is_full): ?>
                         <div class="mlf-session-full">
@@ -1083,13 +1129,13 @@ class MLF_Frontend {
                 </div>
                 
                 <?php
-                // Afficher le formulaire custom et les fiches de personnage pour les joueurs inscrits
+                // Afficher le formulaire custom et les fiches de personnage pour les joueurs inscrits avec inscription confirmée
                 if (is_user_logged_in()) {
                     $current_user = wp_get_current_user();
                     $existing_registration = MLF_Database_Manager::get_user_registration($session_id, $current_user->ID);
                     
-                    if ($existing_registration) {
-                        // L'utilisateur est inscrit, afficher le formulaire custom s'il existe
+                    if ($existing_registration && $existing_registration['registration_status'] === 'confirme') {
+                        // L'utilisateur a une inscription confirmée, afficher le formulaire custom s'il existe
                         if (class_exists('MLF_Session_Forms_Manager')) {
                             $custom_form = MLF_Session_Forms_Manager::get_session_form($session_id);
                             if ($custom_form && !empty($custom_form['form_fields'])) {
