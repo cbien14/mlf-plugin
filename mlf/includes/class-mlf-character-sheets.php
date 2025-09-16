@@ -15,8 +15,8 @@ class MLF_Character_Sheets {
         add_action('init', array($this, 'add_shortcodes'));
         add_action('wp_enqueue_scripts', array($this, 'enqueue_character_scripts'));
         
-        // AJAX handlers for character sheet file management - DISABLED temporarily for admin debug
-        // add_action('wp_ajax_mlf_upload_character_sheet', array($this, 'handle_upload_character_sheet'));
+        // AJAX handlers for character sheet file management
+        add_action('wp_ajax_mlf_upload_character_sheet', array($this, 'handle_upload_character_sheet'));
         add_action('wp_ajax_mlf_delete_character_sheet', array($this, 'handle_delete_character_sheet'));
         add_action('wp_ajax_mlf_download_character_sheet', array($this, 'handle_download_character_sheet'));
         
@@ -390,7 +390,7 @@ class MLF_Character_Sheets {
             SELECT r.id as registration_id, r.user_id, u.display_name as player_name
             FROM {$table_name} r
             LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
-            WHERE r.session_id = %d AND r.status = 'confirmed'
+            WHERE r.session_id = %d AND r.registration_status = 'confirme'
             ORDER BY u.display_name
         ", $session_id), ARRAY_A);
         
@@ -428,8 +428,9 @@ class MLF_Character_Sheets {
         global $wpdb;
         $table_name = $wpdb->prefix . 'mlf_game_sessions';
         
+        // Use game_master_id as the authoritative owner of a session
         $creator_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT created_by FROM {$table_name} WHERE id = %d",
+            "SELECT game_master_id FROM {$table_name} WHERE id = %d",
             $session_id
         ));
         
@@ -444,7 +445,7 @@ class MLF_Character_Sheets {
         $table_name = $wpdb->prefix . 'mlf_player_registrations';
         
         $count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %d AND user_id = %d AND status = 'confirmed'",
+            "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %d AND user_id = %d AND registration_status = 'confirme'",
             $session_id, $user_id
         ));
         
@@ -470,9 +471,10 @@ class MLF_Character_Sheets {
      * Get download URL for a character sheet.
      */
     private function get_download_url($sheet_id) {
-        $nonce = wp_create_nonce('mlf_download_sheet_' . $sheet_id);
-        $plugin_url = plugin_dir_url(__FILE__);
-        return $plugin_url . 'download-sheet.php?sheet_id=' . $sheet_id . '&nonce=' . $nonce;
+    $nonce = wp_create_nonce('mlf_download_sheet_' . $sheet_id);
+    // Build URL from plugin root to avoid subfolder path issues
+    $url = plugins_url('download-sheet.php', MLF_PLUGIN_PATH . 'mlf-plugin.php');
+    return add_query_arg(array('sheet_id' => $sheet_id, 'nonce' => $nonce), $url);
     }
 
     /**
@@ -549,8 +551,8 @@ class MLF_Character_Sheets {
      */
     public function handle_upload_character_sheet() {
         // Verify nonce
-        $nonce_field = isset($_POST['mlf_character_nonce']) ? $_POST['mlf_character_nonce'] : $_POST['nonce'];
-        if (!wp_verify_nonce($nonce_field, 'mlf_character_upload')) {
+        $nonce_field = isset($_POST['mlf_character_nonce']) ? $_POST['mlf_character_nonce'] : ($_POST['nonce'] ?? '');
+        if (!wp_verify_nonce($nonce_field, 'mlf_character_nonce')) {
             wp_send_json_error(array('message' => 'Erreur de sécurité'));
         }
         

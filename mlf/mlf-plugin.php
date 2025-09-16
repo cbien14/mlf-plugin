@@ -109,9 +109,8 @@ function run_mlf_plugin() {
         $output = ob_get_clean();
         // Filtrer les messages d'erreur de la sortie
         $output = preg_replace('/^(Deprecated:|Warning:).*$/m', '', $output);
-        if (!headers_sent() && !empty(trim($output))) {
-            echo $output;
-        }
+        // Ne JAMAIS émettre de sortie ici pour éviter "headers already sent" pendant l'activation
+        // On jette silencieusement toute sortie résiduelle
         ob_start();
     }
     
@@ -152,9 +151,7 @@ add_action('admin_init', function() {
     if (ob_get_level()) {
         $output = ob_get_clean();
         $output = preg_replace('/^(Deprecated:|Warning:).*$/m', '', $output);
-        if (!headers_sent() && !empty(trim($output))) {
-            echo $output;
-        }
+        // Ne pas émettre de sortie dans l'admin bootstrap
         ob_start();
     }
 }, 1);

@@ -14,7 +14,6 @@ class MLF_Database_Manager {
         
         $defaults = array(
             'status' => null,
-            'game_type' => null,
             'date_from' => null,
             'date_to' => null,
             'limit' => 50,
@@ -32,11 +31,6 @@ class MLF_Database_Manager {
         if ($args['status']) {
             $where_clauses[] = "status = %s";
             $where_values[] = $args['status'];
-        }
-        
-        if ($args['game_type']) {
-            $where_clauses[] = "game_type = %s";
-            $where_values[] = $args['game_type'];
         }
         
         if ($args['date_from']) {
@@ -90,17 +84,16 @@ class MLF_Database_Manager {
         $defaults = array(
             'event_id' => null,
             'session_name' => '',
-            'game_type' => 'jdr',
             'game_master_id' => null,
             'game_master_name' => '',
             'session_date' => current_time('Y-m-d'),
             'session_time' => '20:00:00',
             'duration_minutes' => 120,
+            'min_players' => 3,
             'max_players' => 6,
             'current_players' => 0,
             'location' => '',
-            'difficulty_level' => 'debutant',
-            'description' => '',
+            'intention_note' => '',
             'notes' => '',
             'status' => 'planifiee',
             'registration_deadline' => null
@@ -122,6 +115,7 @@ class MLF_Database_Manager {
                     case 'event_id':
                     case 'game_master_id':
                     case 'duration_minutes':
+                    case 'min_players':
                     case 'max_players':
                     case 'current_players':
                         $format[] = '%d';
@@ -130,10 +124,10 @@ class MLF_Database_Manager {
                         $format[] = '%s';
                         break;
                 }
-            } elseif (in_array($key, array('session_name', 'game_type', 'session_date', 'session_time', 'max_players'))) {
+            } elseif (in_array($key, array('session_name', 'session_date', 'session_time', 'min_players', 'max_players'))) {
                 // Required fields - include even if empty
                 $insert_data[$key] = $value;
-                if (in_array($key, array('max_players'))) {
+                if (in_array($key, array('min_players', 'max_players'))) {
                     $format[] = '%d';
                 } else {
                     $format[] = '%s';

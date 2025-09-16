@@ -22,8 +22,6 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-#: public/class-mlf-public.php:20
-msgid "Welcome to the MLF Plugin"
-msgstr ""
+# (Removed) public/class-mlf-public.php strings have been deleted
 
 # Add more strings as needed for your plugin

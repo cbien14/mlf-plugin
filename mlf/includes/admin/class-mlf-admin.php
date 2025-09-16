@@ -242,18 +242,6 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
-                        <th><label for="game_type"><?php _e('Type de jeu', 'mlf'); ?></label></th>
-                        <td>
-                            <select id="game_type" name="game_type" required>
-                                <option value=""><?php _e('Sélectionner le type', 'mlf'); ?></option>
-                                <option value="jdr"><?php _e('JDR', 'mlf'); ?></option>
-                                <option value="murder"><?php _e('Murder', 'mlf'); ?></option>
-                                <option value="jeu_de_societe"><?php _e('Jeu de société', 'mlf'); ?></option>
-                            </select>
-                        </td>
-                    </tr>
-                    
-                    <tr>
                         <th><label for="session_date"><?php _e('Date de la session', 'mlf'); ?></label></th>
                         <td><input type="date" id="session_date" name="session_date" required /></td>
                     </tr>
@@ -269,6 +257,14 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
+                        <th><label for="min_players"><?php _e('Nombre minimum de joueurs', 'mlf'); ?></label></th>
+                        <td>
+                            <input type="number" id="min_players" name="min_players" value="3" min="1" max="20" required />
+                            <p class="description"><?php _e('Nombre minimum de joueurs requis pour que la session ait lieu.', 'mlf'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
                         <th><label for="max_players"><?php _e('Nombre maximum de joueurs', 'mlf'); ?></label></th>
                         <td><input type="number" id="max_players" name="max_players" value="6" min="1" max="20" required /></td>
                     </tr>
@@ -279,20 +275,11 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
-                        <th><label for="difficulty_level"><?php _e('Niveau de difficulté', 'mlf'); ?></label></th>
+                        <th><label for="intention_note"><?php _e('Note d\'intention', 'mlf'); ?></label></th>
                         <td>
-                            <select id="difficulty_level" name="difficulty_level">
-                                <option value="debutant"><?php _e('Débutant', 'mlf'); ?></option>
-                                <option value="intermediaire"><?php _e('Intermédiaire', 'mlf'); ?></option>
-                                <option value="avance"><?php _e('Avancé', 'mlf'); ?></option>
-                                <option value="expert"><?php _e('Expert', 'mlf'); ?></option>
-                            </select>
+                            <textarea id="intention_note" name="intention_note" rows="4" class="large-text" placeholder="Décrivez l'intention de cette session de Murder, l'ambiance souhaitée ou les éléments importants..."></textarea>
+                            <p class="description"><?php _e('Décrivez l\'intention de cette session de Murder, l\'ambiance souhaitée ou les éléments importants.', 'mlf'); ?></p>
                         </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="description"><?php _e('Description', 'mlf'); ?></label></th>
-                        <td><textarea id="description" name="description" rows="4" class="large-text" placeholder="Description générale de la session..."></textarea></td>
                     </tr>
                     
                     <tr>
@@ -353,27 +340,6 @@ class MLF_Admin {
                             </div>
                         </td>
                     </tr>
-                    
-                    <tr>
-                        <th><label for="is_public"><?php _e('Visibilité', 'mlf'); ?></label></th>
-                        <td>
-                            <label>
-                                <input type="checkbox" id="is_public" name="is_public" value="1" checked />
-                                <?php _e('Session publique (visible par tous)', 'mlf'); ?>
-                            </label>
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="requires_approval"><?php _e('Modération', 'mlf'); ?></label></th>
-                        <td>
-                            <label>
-                                <input type="checkbox" id="requires_approval" name="requires_approval" value="1" />
-                                <?php _e('Inscription soumise à approbation', 'mlf'); ?>
-                            </label>
-                        </td>
-                    </tr>
-                    
                     
                     <tr>
                         <th><label for="registration_deadline"><?php _e('Date limite d\'inscription', 'mlf'); ?></label></th>
@@ -810,18 +776,6 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
-                        <th><label for="game_type"><?php _e('Type de jeu', 'mlf'); ?></label></th>
-                        <td>
-                            <select id="game_type" name="game_type" required>
-                                <option value=""><?php _e('Sélectionner le type', 'mlf'); ?></option>
-                                <option value="jdr" <?php selected($session['game_type'], 'jdr'); ?>><?php _e('JDR', 'mlf'); ?></option>
-                                <option value="murder" <?php selected($session['game_type'], 'murder'); ?>><?php _e('Murder', 'mlf'); ?></option>
-                                <option value="jeu_de_societe" <?php selected($session['game_type'], 'jeu_de_societe'); ?>><?php _e('Jeu de société', 'mlf'); ?></option>
-                            </select>
-                        </td>
-                    </tr>
-                    
-                    <tr>
                         <th><label for="session_date"><?php _e('Date de la session', 'mlf'); ?></label></th>
                         <td><input type="date" id="session_date" name="session_date" value="<?php echo $this->safe_attr($session['session_date']); ?>" required /></td>
                     </tr>
@@ -837,6 +791,14 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
+                        <th><label for="min_players"><?php _e('Nombre minimum de joueurs', 'mlf'); ?></label></th>
+                        <td>
+                            <input type="number" id="min_players" name="min_players" value="<?php echo esc_attr($session['min_players'] ?? 3); ?>" min="1" max="20" required />
+                            <p class="description"><?php _e('Nombre minimum de joueurs requis pour que la session ait lieu.', 'mlf'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
                         <th><label for="max_players"><?php _e('Nombre maximum de joueurs', 'mlf'); ?></label></th>
                         <td><input type="number" id="max_players" name="max_players" value="<?php echo esc_attr($session['max_players']); ?>" min="1" max="20" required /></td>
                     </tr>
@@ -847,20 +809,11 @@ class MLF_Admin {
                     </tr>
                     
                     <tr>
-                        <th><label for="difficulty_level"><?php _e('Niveau de difficulté', 'mlf'); ?></label></th>
+                        <th><label for="intention_note"><?php _e('Note d\'intention', 'mlf'); ?></label></th>
                         <td>
-                            <select id="difficulty_level" name="difficulty_level">
-                                <option value="debutant" <?php selected($session['difficulty_level'], 'debutant'); ?>><?php _e('Débutant', 'mlf'); ?></option>
-                                <option value="intermediaire" <?php selected($session['difficulty_level'], 'intermediaire'); ?>><?php _e('Intermédiaire', 'mlf'); ?></option>
-                                <option value="avance" <?php selected($session['difficulty_level'], 'avance'); ?>><?php _e('Avancé', 'mlf'); ?></option>
-                                <option value="expert" <?php selected($session['difficulty_level'], 'expert'); ?>><?php _e('Expert', 'mlf'); ?></option>
-                            </select>
+                            <textarea id="intention_note" name="intention_note" rows="4" class="large-text" placeholder="Décrivez l'intention de cette session de Murder, l'ambiance souhaitée ou les éléments importants..."><?php echo $this->safe_textarea($session['intention_note'] ?? $session['description'] ?? ''); ?></textarea>
+                            <p class="description"><?php _e('Décrivez l\'intention de cette session de Murder, l\'ambiance souhaitée ou les éléments importants.', 'mlf'); ?></p>
                         </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="description"><?php _e('Description', 'mlf'); ?></label></th>
-                        <td><textarea id="description" name="description" rows="4" class="large-text" placeholder="Description générale de la session..."><?php echo $this->safe_textarea($session['description']); ?></textarea></td>
                     </tr>
                     
                     <tr>
@@ -927,26 +880,6 @@ class MLF_Admin {
                                 </div>
                                 <p class="description"><?php _e('Image utilisée comme fond de la session (recommandé: 1920x1080px)', 'mlf'); ?></p>
                             </div>
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="is_public"><?php _e('Visibilité', 'mlf'); ?></label></th>
-                        <td>
-                            <label>
-                                <input type="checkbox" id="is_public" name="is_public" value="1" <?php checked($session['is_public'], 1); ?> />
-                                <?php _e('Session publique (visible par tous)', 'mlf'); ?>
-                            </label>
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <th><label for="requires_approval"><?php _e('Modération', 'mlf'); ?></label></th>
-                        <td>
-                            <label>
-                                <input type="checkbox" id="requires_approval" name="requires_approval" value="1" <?php checked($session['requires_approval'], 1); ?> />
-                                <?php _e('Inscription soumise à approbation', 'mlf'); ?>
-                            </label>
                         </td>
                     </tr>
                     
@@ -1071,14 +1004,13 @@ class MLF_Admin {
 
         $session_data = array(
             'session_name' => sanitize_text_field($_POST['session_name']),
-            'game_type' => sanitize_text_field($_POST['game_type']),
             'session_date' => sanitize_text_field($_POST['session_date']),
             'session_time' => sanitize_text_field($_POST['session_time']),
             'duration_minutes' => intval($_POST['duration_minutes']),
+            'min_players' => intval($_POST['min_players']),
             'max_players' => intval($_POST['max_players']),
             'location' => sanitize_text_field($_POST['location']),
-            'difficulty_level' => sanitize_text_field($_POST['difficulty_level']),
-            'description' => sanitize_textarea_field($_POST['description']),
+            'intention_note' => sanitize_textarea_field($_POST['intention_note']),
             'synopsis' => sanitize_textarea_field($_POST['synopsis']),
             'trigger_warnings' => sanitize_textarea_field($_POST['trigger_warnings']),
             'safety_tools' => sanitize_textarea_field($_POST['safety_tools']),
@@ -1086,8 +1018,6 @@ class MLF_Admin {
             'additional_info' => sanitize_textarea_field($_POST['additional_info']),
             'banner_image_url' => esc_url_raw($_POST['banner_image_url']),
             'background_image_url' => esc_url_raw($_POST['background_image_url']),
-            'is_public' => isset($_POST['is_public']) ? 1 : 0,
-            'requires_approval' => isset($_POST['requires_approval']) ? 1 : 0,
             'registration_deadline' => sanitize_text_field($_POST['registration_deadline']),
             'game_master_id' => get_current_user_id(),
             'game_master_name' => wp_get_current_user()->display_name
@@ -1159,14 +1089,13 @@ class MLF_Admin {
         // Prepare update data (similar to create but for updating)
         $session_data = array(
             'session_name' => sanitize_text_field($_POST['session_name']),
-            'game_type' => sanitize_text_field($_POST['game_type']),
             'session_date' => sanitize_text_field($_POST['session_date']),
             'session_time' => sanitize_text_field($_POST['session_time']),
             'duration_minutes' => intval($_POST['duration_minutes']),
+            'min_players' => intval($_POST['min_players']),
             'max_players' => intval($_POST['max_players']),
             'location' => sanitize_text_field($_POST['location']),
-            'difficulty_level' => sanitize_text_field($_POST['difficulty_level']),
-            'description' => sanitize_textarea_field($_POST['description']),
+            'intention_note' => sanitize_textarea_field($_POST['intention_note']),
             'synopsis' => sanitize_textarea_field($_POST['synopsis']),
             'trigger_warnings' => sanitize_textarea_field($_POST['trigger_warnings']),
             'safety_tools' => sanitize_textarea_field($_POST['safety_tools']),
@@ -1174,8 +1103,6 @@ class MLF_Admin {
             'additional_info' => sanitize_textarea_field($_POST['additional_info']),
             'banner_image_url' => esc_url_raw($_POST['banner_image_url']),
             'background_image_url' => esc_url_raw($_POST['background_image_url']),
-            'is_public' => isset($_POST['is_public']) ? 1 : 0,
-            'requires_approval' => isset($_POST['requires_approval']) ? 1 : 0,
             'registration_deadline' => sanitize_text_field($_POST['registration_deadline']),
             'status' => sanitize_text_field($_POST['status'])
         );

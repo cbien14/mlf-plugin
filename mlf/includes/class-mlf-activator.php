@@ -13,8 +13,18 @@ class MLF_Activator {
      * It creates the necessary database tables and sets up default options.
      */
     public static function activate() {
+        // Swallow any unexpected output during activation to avoid WP warning
+        $had_buffer = ob_get_level() > 0;
+        if (!$had_buffer) {
+            ob_start();
+        } else {
+            // Start a nested buffer so we can safely clean
+            ob_start();
+        }
         // Vérifier que WordPress est prêt
         if (!function_exists('get_option') || !function_exists('add_option')) {
+            // Clean buffer before returning
+            ob_end_clean();
             return; // WordPress n'est pas encore prêt
         }
         
@@ -37,6 +47,11 @@ class MLF_Activator {
         if (function_exists('flush_rewrite_rules')) {
             flush_rewrite_rules();
         }
+
+        // Clean and discard any output generated during activation
+        if (ob_get_level() > 0) {
+            ob_end_clean();
+        }
     }
     
     /**
@@ -53,17 +68,16 @@ class MLF_Activator {
             id int(11) NOT NULL AUTO_INCREMENT,
             event_id bigint(20) unsigned NULL,
             session_name varchar(255) NOT NULL,
-            game_type enum('jdr', 'murder', 'jeu_de_societe') NOT NULL,
             game_master_id bigint(20) unsigned NULL,
             game_master_name varchar(255) NULL,
             session_date date NOT NULL,
             session_time time NOT NULL,
             duration_minutes int(11) DEFAULT 120,
+            min_players int(11) DEFAULT 3,
             max_players int(11) NOT NULL DEFAULT 6,
             current_players int(11) DEFAULT 0,
             location varchar(255) NULL,
-            difficulty_level enum('debutant', 'intermediaire', 'avance', 'expert') DEFAULT 'debutant',
-            description text NULL,
+            intention_note text NULL,
             synopsis text NULL,
             trigger_warnings text NULL,
             additional_info text NULL,
@@ -74,17 +88,13 @@ class MLF_Activator {
             notes text NULL,
             status enum('planifiee', 'en_cours', 'terminee', 'annulee') DEFAULT 'planifiee',
             registration_deadline datetime NULL,
-            is_public tinyint(1) DEFAULT 1,
-            requires_approval tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY event_id (event_id),
             KEY game_master_id (game_master_id),
             KEY session_date (session_date),
-            KEY status (status),
-            KEY game_type (game_type),
-            KEY is_public (is_public)
+            KEY status (status)
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -176,7 +186,7 @@ class MLF_Activator {
      * Get the database version for upgrade management.
      */
     public static function get_database_version() {
-        return '1.1.0'; // Incrémenté pour inclure la colonne user_id
+        return '1.3.0'; // Suppression des colonnes is_public et requires_approval
     }
     
     /**
@@ -203,6 +213,16 @@ class MLF_Activator {
         // Migration vers 1.1.0 - Ajouter user_id à custom_form_responses
         if (version_compare($current_version, '1.1.0', '<')) {
             self::migrate_to_1_1_0();
+        }
+        
+        // Migration vers 1.2.0 - Restructurer sessions Murder only
+        if (version_compare($current_version, '1.2.0', '<')) {
+            self::migrate_to_1_2_0();
+        }
+        
+        // Migration vers 1.3.0 - Supprimer colonnes visibilité et modération
+        if (version_compare($current_version, '1.3.0', '<')) {
+            self::migrate_to_1_3_0();
         }
         
         // Mettre à jour la version
@@ -435,5 +455,145 @@ class MLF_Activator {
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+    }
+    
+    /**
+     * Migration vers version 1.2.0
+     * Restructure les sessions : supprime game_type et difficulty_level, 
+     * ajoute min_players, renomme description en intention_note
+     */
+    private static function migrate_to_1_2_0() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'mlf_game_sessions';
+        
+        // Vérifier si la table existe
+        $table_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = %s
+        ", DB_NAME, $table_name));
+        
+        if (!$table_exists) {
+            // Table n'existe pas, la créer avec la nouvelle structure
+            self::create_game_sessions_table();
+            return;
+        }
+        
+        // Ajouter min_players si elle n'existe pas
+        $min_players_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'min_players'
+        ", DB_NAME, $table_name));
+        
+        if (!$min_players_exists) {
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN min_players int(11) DEFAULT 3 AFTER max_players");
+        }
+        
+        // Renommer description en intention_note si nécessaire
+        $description_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'description'
+        ", DB_NAME, $table_name));
+        
+        $intention_note_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'intention_note'
+        ", DB_NAME, $table_name));
+        
+        if ($description_exists && !$intention_note_exists) {
+            $wpdb->query("ALTER TABLE $table_name CHANGE COLUMN description intention_note text NULL");
+        }
+        
+        // Supprimer game_type si elle existe
+        $game_type_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'game_type'
+        ", DB_NAME, $table_name));
+        
+        if ($game_type_exists) {
+            $wpdb->query("ALTER TABLE $table_name DROP COLUMN game_type");
+        }
+        
+        // Supprimer difficulty_level si elle existe
+        $difficulty_level_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'difficulty_level'
+        ", DB_NAME, $table_name));
+        
+        if ($difficulty_level_exists) {
+            $wpdb->query("ALTER TABLE $table_name DROP COLUMN difficulty_level");
+        }
+        
+        // Supprimer l'index game_type s'il existe
+        $wpdb->query("ALTER TABLE $table_name DROP INDEX IF EXISTS game_type");
+    }
+    
+    /**
+     * Migration vers version 1.3.0
+     * Supprime les colonnes is_public et requires_approval devenues inutiles
+     */
+    private static function migrate_to_1_3_0() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'mlf_game_sessions';
+        
+        // Vérifier si la table existe
+        $table_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = %s 
+            AND table_name = %s
+        ", DB_NAME, $table_name));
+        
+        if (!$table_exists) {
+            // Table n'existe pas, rien à faire
+            return;
+        }
+        
+        // Supprimer l'index is_public s'il existe
+        $wpdb->query("ALTER TABLE $table_name DROP INDEX IF EXISTS is_public");
+        
+        // Supprimer is_public si elle existe
+        $is_public_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'is_public'
+        ", DB_NAME, $table_name));
+        
+        if ($is_public_exists) {
+            $wpdb->query("ALTER TABLE $table_name DROP COLUMN is_public");
+        }
+        
+        // Supprimer requires_approval si elle existe
+        $requires_approval_exists = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*) 
+            FROM information_schema.columns 
+            WHERE table_schema = %s 
+            AND table_name = %s 
+            AND column_name = 'requires_approval'
+        ", DB_NAME, $table_name));
+        
+        if ($requires_approval_exists) {
+            $wpdb->query("ALTER TABLE $table_name DROP COLUMN requires_approval");
+        }
     }
 }

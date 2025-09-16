@@ -29,6 +29,9 @@ class MLF_Game_Events {
      * Add meta boxes for game events.
      */
     public function add_game_event_meta_boxes() {
+        if (!post_type_exists('mlf_game_event')) {
+            return; // CPT not available; avoid registering meta boxes
+        }
         add_meta_box(
             'game_event_details',
             __('Détails de l\'événement', 'mlf'),
@@ -62,27 +65,16 @@ class MLF_Game_Events {
         }
 
         // Get current values avec vérification de sécurité
-        $game_type = get_post_meta($post->ID, '_mlf_game_type', true) ?: '';
         $event_date = get_post_meta($post->ID, '_mlf_event_date', true) ?: '';
         $event_time = get_post_meta($post->ID, '_mlf_event_time', true) ?: '';
-        $max_players = get_post_meta($post->ID, '_mlf_max_players', true) ?: '';
+        $min_players = get_post_meta($post->ID, '_mlf_min_players', true) ?: '3';
+        $max_players = get_post_meta($post->ID, '_mlf_max_players', true) ?: '6';
         $location = get_post_meta($post->ID, '_mlf_location', true) ?: '';
-        $difficulty_level = get_post_meta($post->ID, '_mlf_difficulty_level', true) ?: '';
+        $intention_note = get_post_meta($post->ID, '_mlf_intention_note', true) ?: '';
         $registration_deadline = get_post_meta($post->ID, '_mlf_registration_deadline', true) ?: '';
 
         ?>
         <table class="form-table">
-            <tr>
-                <th><label for="mlf_game_type"><?php _e('Type de jeu', 'mlf'); ?></label></th>
-                <td>
-                    <select id="mlf_game_type" name="mlf_game_type" style="width: 100%;">
-                        <option value=""><?php _e('Sélectionner le type de jeu', 'mlf'); ?></option>
-                        <option value="jdr" <?php selected($game_type, 'jdr'); ?>><?php _e('JDR', 'mlf'); ?></option>
-                        <option value="murder" <?php selected($game_type, 'murder'); ?>><?php _e('Murder', 'mlf'); ?></option>
-                        <option value="jeu_de_societe" <?php selected($game_type, 'jeu_de_societe'); ?>><?php _e('Jeu de société', 'mlf'); ?></option>
-                    </select>
-                </td>
-            </tr>
             <tr>
                 <th><label for="mlf_event_date"><?php _e('Date de l\'événement', 'mlf'); ?></label></th>
                 <td>
@@ -93,6 +85,13 @@ class MLF_Game_Events {
                 <th><label for="mlf_event_time"><?php _e('Heure de l\'événement', 'mlf'); ?></label></th>
                 <td>
                     <input type="time" id="mlf_event_time" name="mlf_event_time" value="<?php echo esc_attr($event_time); ?>" style="width: 100%;" />
+                </td>
+            </tr>
+            <tr>
+                <th><label for="mlf_min_players"><?php _e('Nombre minimum de joueurs', 'mlf'); ?></label></th>
+                <td>
+                    <input type="number" id="mlf_min_players" name="mlf_min_players" value="<?php echo esc_attr($min_players); ?>" min="1" max="50" style="width: 100%;" />
+                    <p class="description"><?php _e('Nombre minimum de joueurs requis pour que la session ait lieu.', 'mlf'); ?></p>
                 </td>
             </tr>
             <tr>
@@ -109,15 +108,10 @@ class MLF_Game_Events {
                 </td>
             </tr>
             <tr>
-                <th><label for="mlf_difficulty_level"><?php _e('Niveau de difficulté', 'mlf'); ?></label></th>
+                <th><label for="mlf_intention_note"><?php _e('Note d\'intention', 'mlf'); ?></label></th>
                 <td>
-                    <select id="mlf_difficulty_level" name="mlf_difficulty_level" style="width: 100%;">
-                        <option value=""><?php _e('Sélectionner la difficulté', 'mlf'); ?></option>
-                        <option value="beginner" <?php selected($difficulty_level, 'beginner'); ?>><?php _e('Débutant', 'mlf'); ?></option>
-                        <option value="intermediate" <?php selected($difficulty_level, 'intermediate'); ?>><?php _e('Intermédiaire', 'mlf'); ?></option>
-                        <option value="advanced" <?php selected($difficulty_level, 'advanced'); ?>><?php _e('Avancé', 'mlf'); ?></option>
-                        <option value="expert" <?php selected($difficulty_level, 'expert'); ?>><?php _e('Expert', 'mlf'); ?></option>
-                    </select>
+                    <textarea id="mlf_intention_note" name="mlf_intention_note" rows="4" style="width: 100%;"><?php echo esc_textarea($intention_note); ?></textarea>
+                    <p class="description"><?php _e('Décrivez l\'intention de cette session de Murder, l\'ambiance souhaitée ou les éléments importants.', 'mlf'); ?></p>
                 </td>
             </tr>
             <tr>
@@ -202,18 +196,23 @@ class MLF_Game_Events {
 
         // Save the meta fields
         $meta_fields = array(
-            'mlf_game_type',
             'mlf_event_date',
             'mlf_event_time',
+            'mlf_min_players',
             'mlf_max_players',
             'mlf_location',
-            'mlf_difficulty_level',
+            'mlf_intention_note',
             'mlf_registration_deadline'
         );
 
         foreach ($meta_fields as $field) {
             if (isset($_POST[$field])) {
-                update_post_meta($post_id, '_' . $field, sanitize_text_field($_POST[$field]));
+                // Utiliser sanitize_textarea_field pour intention_note
+                if ($field === 'mlf_intention_note') {
+                    update_post_meta($post_id, '_' . $field, sanitize_textarea_field($_POST[$field]));
+                } else {
+                    update_post_meta($post_id, '_' . $field, sanitize_text_field($_POST[$field]));
+                }
             }
         }
     }
@@ -222,7 +221,7 @@ class MLF_Game_Events {
      * Enqueue scripts for game events.
      */
     public function enqueue_game_event_scripts() {
-        if (is_singular('mlf_game_event') || is_post_type_archive('mlf_game_event')) {
+        if (post_type_exists('mlf_game_event') && (is_singular('mlf_game_event') || is_post_type_archive('mlf_game_event'))) {
             // Utiliser les scripts publics principaux du plugin
             wp_enqueue_script('mlf-public-js', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/js/mlf-public.js', array('jquery'), '1.0.0', true);
             wp_enqueue_style('mlf-public-css', plugin_dir_url(MLF_PLUGIN_PATH . 'mlf-plugin.php') . 'public/css/mlf-public.css', array(), '1.0.0');
@@ -240,12 +239,12 @@ class MLF_Game_Events {
      */
     public static function get_event_details($post_id) {
         return array(
-            'game_type' => get_post_meta($post_id, '_mlf_game_type', true) ?: '',
             'event_date' => get_post_meta($post_id, '_mlf_event_date', true) ?: '',
             'event_time' => get_post_meta($post_id, '_mlf_event_time', true) ?: '',
-            'max_players' => get_post_meta($post_id, '_mlf_max_players', true) ?: '',
+            'min_players' => get_post_meta($post_id, '_mlf_min_players', true) ?: '3',
+            'max_players' => get_post_meta($post_id, '_mlf_max_players', true) ?: '6',
             'location' => get_post_meta($post_id, '_mlf_location', true) ?: '',
-            'difficulty_level' => get_post_meta($post_id, '_mlf_difficulty_level', true) ?: '',
+            'intention_note' => get_post_meta($post_id, '_mlf_intention_note', true) ?: '',
             'registration_deadline' => get_post_meta($post_id, '_mlf_registration_deadline', true) ?: '',
             'registered_players' => get_post_meta($post_id, '_mlf_registered_players', true) ?: array(),
         );
@@ -360,6 +359,10 @@ class MLF_Game_Events {
 
         $page = intval($_POST['page']);
         
+        if (!post_type_exists('mlf_game_event')) {
+            wp_send_json_success(array('html' => '', 'has_more' => false));
+        }
+
         $args = array(
             'post_type' => 'mlf_game_event',
             'posts_per_page' => 12,
@@ -393,7 +396,7 @@ class MLF_Game_Events {
      * Add event content to single event posts.
      */
     public function add_event_content($content) {
-        if (is_singular('mlf_game_event') && in_the_loop() && is_main_query()) {
+        if (post_type_exists('mlf_game_event') && is_singular('mlf_game_event') && in_the_loop() && is_main_query()) {
             ob_start();
             mlf_display_game_event(get_the_ID());
             $event_content = ob_get_clean();

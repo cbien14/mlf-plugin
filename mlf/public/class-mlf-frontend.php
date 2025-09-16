@@ -149,21 +149,15 @@ class MLF_Frontend {
         // Vue par défaut : liste des sessions
         $atts = shortcode_atts(array(
             'limit' => 10,
-            'game_type' => '',
             'upcoming_only' => true
         ), $atts);
 
         $filters = array(
-            'limit' => intval($atts['limit']),
-            'is_public' => 1
+            'limit' => intval($atts['limit'])
         );
 
         if ($atts['upcoming_only']) {
             $filters['date_from'] = date('Y-m-d');
-        }
-
-        if (!empty($atts['game_type'])) {
-            $filters['game_type'] = sanitize_text_field($atts['game_type']);
         }
 
         $sessions = MLF_Database_Manager::get_game_sessions($filters);
@@ -171,19 +165,8 @@ class MLF_Frontend {
         ob_start();
         ?>
         <div class="mlf-sessions-list">
-            <h2><?php _e('Sessions de jeu disponibles', 'mlf'); ?></h2>
+            <h2><?php _e('Sessions de Murder disponibles', 'mlf'); ?></h2>
             
-            <div class="mlf-filters">
-                <form method="get" class="mlf-filter-form">
-                    <select name="filter_game_type" onchange="this.form.submit()">
-                        <option value=""><?php _e('Tous les types de jeux', 'mlf'); ?></option>
-                        <option value="jdr" <?php selected($_GET['filter_game_type'] ?? '', 'jdr'); ?>><?php _e('JDR', 'mlf'); ?></option>
-                        <option value="murder" <?php selected($_GET['filter_game_type'] ?? '', 'murder'); ?>><?php _e('Murder', 'mlf'); ?></option>
-                        <option value="jeu_de_societe" <?php selected($_GET['filter_game_type'] ?? '', 'jeu_de_societe'); ?>><?php _e('Jeu de société', 'mlf'); ?></option>
-                    </select>
-                </form>
-            </div>
-
             <?php if (empty($sessions)): ?>
                 <p class="mlf-no-sessions"><?php _e('Aucune session disponible pour le moment.', 'mlf'); ?></p>
             <?php else: ?>
@@ -192,8 +175,8 @@ class MLF_Frontend {
                         <div class="mlf-session-card" data-session-id="<?php echo esc_attr($session['id']); ?>">
                             <div class="mlf-session-header">
                                 <h3 class="mlf-session-title"><?php echo esc_html($session['session_name']); ?></h3>
-                                <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
-                                    <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                                <span class="mlf-game-type mlf-game-type-murder">
+                                    <?php _e('Murder', 'mlf'); ?>
                                 </span>
                             </div>
                             
@@ -215,17 +198,18 @@ class MLF_Frontend {
                                 <div class="mlf-session-players">
                                     <strong><?php _e('Joueurs:', 'mlf'); ?></strong> 
                                     <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
-                                </div>
-                                
-                                <div class="mlf-session-difficulty">
-                                    <strong><?php _e('Niveau:', 'mlf'); ?></strong> 
-                                    <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                                    <?php if (!empty($session['min_players'])): ?>
+                                        <span class="mlf-min-players"><?php printf(__('(min. %d)', 'mlf'), intval($session['min_players'])); ?></span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
-                            <?php if (!empty($session['description'])): ?>
-                                <div class="mlf-session-description">
-                                    <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                            <?php if (!empty($session['intention_note'])): ?>
+                                <div class="mlf-session-intention">
+                                    <strong><?php _e('Note d\'intention:', 'mlf'); ?></strong>
+                                    <div class="mlf-intention-content">
+                                        <?php echo wp_kses_post(wpautop($session['intention_note'])); ?>
+                                    </div>
                                 </div>
                             <?php endif; ?>
 
@@ -328,8 +312,8 @@ class MLF_Frontend {
         }
 
         $session = MLF_Database_Manager::get_game_session($session_id);
-        if (!$session || !$session['is_public']) {
-            return '<p>' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        if (!$session) {
+            return '<p>' . __('Session non trouvée.', 'mlf') . '</p>';
         }
 
         ob_start();
@@ -341,8 +325,8 @@ class MLF_Frontend {
                 <div class="mlf-info-grid">
                     <div class="mlf-info-item">
                         <strong><?php _e('Type de jeu:', 'mlf'); ?></strong>
-                        <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
-                            <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                        <span class="mlf-game-type mlf-game-type-murder">
+                            <?php _e('Murder', 'mlf'); ?>
                         </span>
                     </div>
                     
@@ -366,13 +350,11 @@ class MLF_Frontend {
                     <?php endif; ?>
                     
                     <div class="mlf-info-item">
-                        <strong><?php _e('Niveau:', 'mlf'); ?></strong>
-                        <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
-                    </div>
-                    
-                    <div class="mlf-info-item">
                         <strong><?php _e('Joueurs:', 'mlf'); ?></strong>
                         <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
+                        <?php if (!empty($session['min_players'])): ?>
+                            <span class="mlf-min-players"><?php printf(__('(minimum %d)', 'mlf'), intval($session['min_players'])); ?></span>
+                        <?php endif; ?>
                     </div>
                     
                     <?php if (!empty($session['game_master_name'])): ?>
@@ -384,11 +366,11 @@ class MLF_Frontend {
                 </div>
             </div>
 
-            <?php if (!empty($session['description'])): ?>
+            <?php if (!empty($session['intention_note'])): ?>
                 <div class="mlf-section">
-                    <h3><?php _e('Description', 'mlf'); ?></h3>
+                    <h3><?php _e('Note d\'intention', 'mlf'); ?></h3>
                     <div class="mlf-content">
-                        <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                        <?php echo wp_kses_post(wpautop($session['intention_note'])); ?>
                     </div>
                 </div>
             <?php endif; ?>
@@ -464,8 +446,8 @@ class MLF_Frontend {
         }
 
         $session = MLF_Database_Manager::get_game_session($session_id);
-        if (!$session || !$session['is_public']) {
-            return '<p>' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        if (!$session) {
+            return '<p>' . __('Session non trouvée.', 'mlf') . '</p>';
         }
 
         // Vérifier si l'utilisateur est déjà inscrit
@@ -904,40 +886,13 @@ class MLF_Frontend {
     }
 
     /**
-     * Get game type label.
-     */
-    private function get_game_type_label($type) {
-        $labels = array(
-            'jdr' => 'JDR',
-            'murder' => 'Murder',
-            'jeu_de_societe' => 'Jeu de société'
-        );
-        
-        return isset($labels[$type]) ? $labels[$type] : $type;
-    }
-
-    /**
-     * Get difficulty level label.
-     */
-    private function get_difficulty_label($level) {
-        $labels = array(
-            'debutant' => 'Débutant',
-            'intermediaire' => 'Intermédiaire',
-            'avance' => 'Avancé',
-            'expert' => 'Expert'
-        );
-        
-        return isset($labels[$level]) ? $labels[$level] : $level;
-    }
-
-    /**
      * Afficher la vue détaillée d'une session sur une page dédiée.
      */
     private function display_session_details_page($session_id) {
         $session = MLF_Database_Manager::get_game_session($session_id);
         
-        if (!$session || !$session['is_public']) {
-            return '<p class="mlf-error">' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        if (!$session) {
+            return '<p class="mlf-error">' . __('Session non trouvée.', 'mlf') . '</p>';
         }
         
         ob_start();
@@ -972,8 +927,8 @@ class MLF_Frontend {
                 <div class="mlf-session-meta-grid">
                     <div class="mlf-meta-item">
                         <strong><?php _e('Type de jeu:', 'mlf'); ?></strong>
-                        <span class="mlf-game-type mlf-game-type-<?php echo esc_attr($session['game_type']); ?>">
-                            <?php echo esc_html($this->get_game_type_label($session['game_type'])); ?>
+                        <span class="mlf-game-type mlf-game-type-murder">
+                            <?php _e('Murder', 'mlf'); ?>
                         </span>
                     </div>
                     
@@ -994,11 +949,9 @@ class MLF_Frontend {
                     <div class="mlf-meta-item">
                         <strong><?php _e('Joueurs:', 'mlf'); ?></strong>
                         <?php echo intval($session['current_players']); ?>/<?php echo intval($session['max_players']); ?>
-                    </div>
-                    
-                    <div class="mlf-meta-item">
-                        <strong><?php _e('Niveau:', 'mlf'); ?></strong>
-                        <?php echo esc_html($this->get_difficulty_label($session['difficulty_level'])); ?>
+                        <?php if (!empty($session['min_players'])): ?>
+                            <span class="mlf-min-players"><?php printf(__('(minimum %d)', 'mlf'), intval($session['min_players'])); ?></span>
+                        <?php endif; ?>
                     </div>
                     
                     <?php if (!empty($session['age_requirement'])): ?>
@@ -1009,10 +962,10 @@ class MLF_Frontend {
                     <?php endif; ?>
                 </div>
 
-                <?php if (!empty($session['description'])): ?>
-                    <div class="mlf-session-description">
-                        <h3><?php _e('Description', 'mlf'); ?></h3>
-                        <?php echo wp_kses_post(wpautop($session['description'])); ?>
+                <?php if (!empty($session['intention_note'])): ?>
+                    <div class="mlf-session-intention">
+                        <h3><?php _e('Note d\'intention', 'mlf'); ?></h3>
+                        <?php echo wp_kses_post(wpautop($session['intention_note'])); ?>
                     </div>
                 <?php endif; ?>
 
@@ -1311,8 +1264,8 @@ class MLF_Frontend {
     private function display_registration_page($session_id) {
         $session = MLF_Database_Manager::get_game_session($session_id);
         
-        if (!$session || !$session['is_public']) {
-            return '<p class="mlf-error">' . __('Session non trouvée ou non publique.', 'mlf') . '</p>';
+        if (!$session) {
+            return '<p class="mlf-error">' . __('Session non trouvée.', 'mlf') . '</p>';
         }
         
         if (intval($session['current_players']) >= intval($session['max_players'])) {

@@ -156,8 +156,6 @@ jQuery(document).ready(function($) {
             additional_info: $('#additional_info').val(),
             banner_image_url: $('#banner_image_url').val(),
             background_image_url: $('#background_image_url').val(),
-            is_public: $('#is_public').is(':checked') ? 1 : 0,
-            requires_approval: $('#requires_approval').is(':checked') ? 1 : 0,
             registration_deadline: $('#registration_deadline').val(),
             mlf_session_nonce: $('#mlf_session_nonce').val()
         };
@@ -299,8 +297,6 @@ jQuery(document).ready(function($) {
             additional_info: $('#additional_info').val(),
             banner_image_url: $('#banner_image_url').val(),
             background_image_url: $('#background_image_url').val(),
-            is_public: $('#is_public').is(':checked') ? 1 : 0,
-            requires_approval: $('#requires_approval').is(':checked') ? 1 : 0,
             registration_deadline: $('#registration_deadline').val(),
             status: $('#status').val(),
             nonce: mlf_admin_ajax.nonce
