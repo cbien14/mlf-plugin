@@ -25,6 +25,8 @@ class MLF_Admin {
             add_action('wp_ajax_mlf_update_session', array($this, 'handle_update_session'));
             add_action('wp_ajax_mlf_confirm_registration', array($this, 'handle_confirm_registration'));
             add_action('wp_ajax_mlf_get_response_details', array($this, 'handle_get_response_details'));
+            add_action('wp_ajax_mlf_approve_session', array($this, 'handle_approve_session'));
+            add_action('wp_ajax_mlf_reject_session', array($this, 'handle_reject_session'));
             
             // Backup handler for character sheet upload in case the main one doesn't work
             add_action('wp_ajax_mlf_upload_character_sheet', array($this, 'handle_admin_upload_character_sheet'));
@@ -148,14 +150,28 @@ class MLF_Admin {
      * Render the sessions management page.
      */
     public function render_sessions_page() {
-        $sessions = MLF_Database_Manager::get_game_sessions(array(
-            'date_from' => date('Y-m-d'),
-            'limit' => 50
-        ));
+        // Gérer le filtre de statut
+        $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'all';
+        
+        $filter_args = array('limit' => 50);
+        if ($status_filter !== 'all') {
+            $filter_args['status'] = $status_filter;
+        }
+        // Par défaut, afficher toutes les sessions (pas seulement futures)
+        
+        $sessions = MLF_Database_Manager::get_game_sessions($filter_args);
+        
+        // Compter les sessions en attente pour le badge
+        $pending_sessions = MLF_Database_Manager::get_game_sessions(array('status' => 'en_attente', 'limit' => 100));
+        $pending_count = count($pending_sessions);
         
         ?>
         <div class="wrap">
-            <h1><?php _e('Sessions de jeu', 'mlf'); ?></h1>
+            <h1><?php _e('Sessions de jeu', 'mlf'); ?>
+                <?php if ($pending_count > 0): ?>
+                    <span class="mlf-pending-badge"><?php echo sprintf(__('%d en attente', 'mlf'), $pending_count); ?></span>
+                <?php endif; ?>
+            </h1>
             
             <div class="mlf-admin-actions">
                 <a href="<?php echo admin_url('admin.php?page=mlf-new-session'); ?>" class="button button-primary">
@@ -163,11 +179,23 @@ class MLF_Admin {
                 </a>
             </div>
             
+            <!-- Filtres de statut -->
+            <div class="mlf-status-filters">
+                <ul class="subsubsub">
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=all'); ?>" <?php echo $status_filter === 'all' ? 'class="current"' : ''; ?>><?php _e('Toutes', 'mlf'); ?></a> |</li>
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=en_attente'); ?>" <?php echo $status_filter === 'en_attente' ? 'class="current"' : ''; ?>><?php _e('En attente', 'mlf'); ?> <?php if ($pending_count > 0) echo "($pending_count)"; ?></a> |</li>
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=planifiee'); ?>" <?php echo $status_filter === 'planifiee' ? 'class="current"' : ''; ?>><?php _e('Planifiées', 'mlf'); ?></a> |</li>
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=en_cours'); ?>" <?php echo $status_filter === 'en_cours' ? 'class="current"' : ''; ?>><?php _e('En cours', 'mlf'); ?></a> |</li>
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=terminee'); ?>" <?php echo $status_filter === 'terminee' ? 'class="current"' : ''; ?>><?php _e('Terminées', 'mlf'); ?></a> |</li>
+                    <li><a href="<?php echo admin_url('admin.php?page=mlf-sessions&status=annulee'); ?>" <?php echo $status_filter === 'annulee' ? 'class="current"' : ''; ?>><?php _e('Annulées', 'mlf'); ?></a></li>
+                </ul>
+            </div>
+            
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
                         <th><?php _e('Nom de la session', 'mlf'); ?></th>
-                        <th><?php _e('Type de jeu', 'mlf'); ?></th>
+                        <th><?php _e('Organisateur', 'mlf'); ?></th>
                         <th><?php _e('Date', 'mlf'); ?></th>
                         <th><?php _e('Heure', 'mlf'); ?></th>
                         <th><?php _e('Joueurs', 'mlf'); ?></th>
@@ -183,9 +211,9 @@ class MLF_Admin {
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sessions as $session): ?>
-                            <tr>
+                            <tr <?php echo $session['status'] === 'en_attente' ? 'class="mlf-pending-session"' : ''; ?>>
                                 <td><strong><?php echo esc_html($session['session_name'] ?? ''); ?></strong></td>
-                                <td><?php echo esc_html($this->get_game_type_label($session['game_type'] ?? '')); ?></td>
+                                <td><?php echo esc_html($session['game_master_name'] ?? 'Non défini'); ?></td>
                                 <td><?php echo esc_html($session['session_date'] ? date('d/m/Y', strtotime($session['session_date'])) : ''); ?></td>
                                 <td><?php echo esc_html($session['session_time'] ? date('H:i', strtotime($session['session_time'])) : ''); ?></td>
                                 <td><?php echo intval($session['current_players'] ?? 0); ?>/<?php echo intval($session['max_players'] ?? 0); ?></td>
@@ -201,8 +229,20 @@ class MLF_Admin {
                                     }
                                     ?>
                                 </td>
-                                <td><?php echo esc_html($this->get_status_label($session['status'] ?? '')); ?></td>
                                 <td>
+                                    <span class="mlf-status-badge mlf-status-<?php echo esc_attr($session['status']); ?>">
+                                        <?php echo esc_html($this->get_status_label($session['status'] ?? '')); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php if ($session['status'] === 'en_attente'): ?>
+                                        <button class="button button-primary button-small mlf-approve-session" data-session-id="<?php echo $session['id']; ?>" title="Approuver la session">
+                                            ✓ <?php _e('Approuver', 'mlf'); ?>
+                                        </button>
+                                        <button class="button button-small mlf-reject-session" data-session-id="<?php echo $session['id']; ?>" title="Rejeter la session">
+                                            ✗ <?php _e('Rejeter', 'mlf'); ?>
+                                        </button>
+                                    <?php endif; ?>
                                     <a href="<?php echo admin_url('admin.php?page=mlf-edit-session&id=' . $session['id']); ?>" class="button button-small">
                                         <?php _e('Modifier', 'mlf'); ?>
                                     </a>
@@ -219,6 +259,40 @@ class MLF_Admin {
                 </tbody>
             </table>
         </div>
+        
+        <style>
+        .mlf-pending-badge {
+            background: #ffb900;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        .mlf-status-filters {
+            margin-bottom: 20px;
+        }
+        
+        .mlf-pending-session {
+            background-color: #fff8e1;
+        }
+        
+        .mlf-approve-session {
+            color: #46b450;
+            border-color: #46b450;
+        }
+        
+        .mlf-approve-session:hover {
+            background: #46b450;
+            color: white;
+        }
+        
+        .mlf-reject-session:hover {
+            background: #dc3232;
+            color: white;
+        }
+        </style>
         <?php
     }
 
@@ -941,24 +1015,6 @@ class MLF_Admin {
     }
 
     /**
-     * Get game type label.
-     */
-    private function get_game_type_label($type) {
-        if (empty($type)) {
-            return '';
-        }
-        
-        $labels = array(
-            'all' => 'Tous les types',
-            'jdr' => 'JDR',
-            'murder' => 'Murder',
-            'jeu_de_societe' => 'Jeu de société'
-        );
-        
-        return isset($labels[$type]) ? $labels[$type] : $type;
-    }
-
-    /**
      * Get status label.
      */
     private function get_status_label($status) {
@@ -967,6 +1023,7 @@ class MLF_Admin {
         }
         
         $labels = array(
+            'en_attente' => 'En attente',
             'planifiee' => 'Planifiée',
             'en_cours' => 'En cours',
             'terminee' => 'Terminée',
@@ -2294,5 +2351,180 @@ class MLF_Admin {
             <?php endif; ?>
         </div>
         <?php
+    }
+
+    /**
+     * Handle session approval AJAX request.
+     */
+    public function handle_approve_session() {
+        // Vérifier les permissions
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permissions insuffisantes.'));
+            return;
+        }
+
+        // Vérifier le nonce
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'mlf_admin_ajax')) {
+            wp_send_json_error(array('message' => 'Token de sécurité invalide.'));
+            return;
+        }
+
+        $session_id = intval($_POST['session_id'] ?? 0);
+        if (!$session_id) {
+            wp_send_json_error(array('message' => 'ID de session invalide.'));
+            return;
+        }
+
+        // Vérifier que la session existe et est en attente
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        if (!$session) {
+            wp_send_json_error(array('message' => 'Session non trouvée.'));
+            return;
+        }
+
+        if ($session['status'] !== 'en_attente') {
+            wp_send_json_error(array('message' => 'Cette session n\'est pas en attente de validation.'));
+            return;
+        }
+
+        // Approuver la session (changer le statut à "planifiee")
+        $result = MLF_Database_Manager::update_game_session($session_id, array(
+            'status' => 'planifiee'
+        ));
+
+        if ($result) {
+            // Notifier l'organisateur de l'approbation
+            $this->notify_user_session_approved($session);
+            
+            wp_send_json_success(array(
+                'message' => 'Session approuvée avec succès.',
+                'new_status' => 'planifiee',
+                'new_status_label' => $this->get_status_label('planifiee')
+            ));
+        } else {
+            wp_send_json_error(array('message' => 'Erreur lors de l\'approbation de la session.'));
+        }
+    }
+
+    /**
+     * Handle session rejection AJAX request.
+     */
+    public function handle_reject_session() {
+        // Vérifier les permissions
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permissions insuffisantes.'));
+            return;
+        }
+
+        // Vérifier le nonce
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'mlf_admin_ajax')) {
+            wp_send_json_error(array('message' => 'Token de sécurité invalide.'));
+            return;
+        }
+
+        $session_id = intval($_POST['session_id'] ?? 0);
+        $rejection_reason = sanitize_textarea_field($_POST['reason'] ?? '');
+        
+        if (!$session_id) {
+            wp_send_json_error(array('message' => 'ID de session invalide.'));
+            return;
+        }
+
+        // Vérifier que la session existe et est en attente
+        $session = MLF_Database_Manager::get_game_session($session_id);
+        if (!$session) {
+            wp_send_json_error(array('message' => 'Session non trouvée.'));
+            return;
+        }
+
+        if ($session['status'] !== 'en_attente') {
+            wp_send_json_error(array('message' => 'Cette session n\'est pas en attente de validation.'));
+            return;
+        }
+
+        // Notifier l'organisateur du rejet avant suppression
+        $this->notify_user_session_rejected($session, $rejection_reason);
+
+        // Supprimer la session rejetée
+        $result = MLF_Database_Manager::delete_game_session($session_id);
+
+        if ($result) {
+            wp_send_json_success(array(
+                'message' => 'Session rejetée et supprimée. L\'organisateur a été notifié.',
+                'removed' => true
+            ));
+        } else {
+            wp_send_json_error(array('message' => 'Erreur lors du rejet de la session.'));
+        }
+    }
+
+    /**
+     * Notifier l'utilisateur que sa session a été approuvée.
+     */
+    private function notify_user_session_approved($session) {
+        $user = get_user_by('ID', $session['game_master_id']);
+        if (!$user) return;
+
+        $subject = sprintf(__('Votre session "%s" a été approuvée !', 'mlf'), $session['session_name']);
+        $message = sprintf(
+            __('Bonjour %s,
+
+Nous avons le plaisir de vous informer que votre session Murder "%s" a été approuvée et est maintenant visible publiquement.
+
+Détails de la session :
+- Nom : %s
+- Date : %s à %s
+- Nombre de joueurs : %d à %d
+
+Votre session est maintenant accessible aux participants pour inscription.
+
+Cordialement,
+L\'équipe %s', 'mlf'),
+            $user->display_name,
+            $session['session_name'],
+            $session['session_name'],
+            date('d/m/Y', strtotime($session['session_date'])),
+            date('H:i', strtotime($session['session_time'])),
+            $session['min_players'],
+            $session['max_players'],
+            get_bloginfo('name')
+        );
+
+        wp_mail($user->user_email, $subject, $message);
+    }
+
+    /**
+     * Notifier l'utilisateur que sa session a été rejetée.
+     */
+    private function notify_user_session_rejected($session, $reason = '') {
+        $user = get_user_by('ID', $session['game_master_id']);
+        if (!$user) return;
+
+        $subject = sprintf(__('Votre session "%s" n\'a pas pu être approuvée', 'mlf'), $session['session_name']);
+        $reason_text = $reason ? sprintf(__("\n\nRaison du rejet :\n%s", 'mlf'), $reason) : '';
+        
+        $message = sprintf(
+            __('Bonjour %s,
+
+Nous vous informons que votre session Murder "%s" n\'a malheureusement pas pu être approuvée.%s
+
+Détails de la session :
+- Nom : %s
+- Date : %s à %s
+
+N\'hésitez pas à nous contacter si vous avez des questions ou si vous souhaitez proposer une nouvelle session.
+
+Cordialement,
+L\'équipe %s', 'mlf'),
+            $user->display_name,
+            $session['session_name'],
+            $reason_text,
+            $session['session_name'],
+            date('d/m/Y', strtotime($session['session_date'])),
+            date('H:i', strtotime($session['session_time'])),
+            get_bloginfo('name')
+        );
+
+        wp_mail($user->user_email, $subject, $message);
     }
 }

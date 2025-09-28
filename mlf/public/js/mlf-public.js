@@ -317,20 +317,12 @@ jQuery(document).ready(function($) {
         console.log('Interface mise à jour après inscription:', sessionData);
     }
     
-    // Filter functionality
+    // Form functionality preserved for future extensions
     $('.mlf-filter-form select').on('change', function() {
         var $form = $(this).closest('form');
         var currentUrl = new URL(window.location);
         
-        // Update URL parameters based on form values
-        var gameType = $form.find('[name="filter_game_type"]').val();
-        if (gameType) {
-            currentUrl.searchParams.set('filter_game_type', gameType);
-        } else {
-            currentUrl.searchParams.delete('filter_game_type');
-        }
-        
-        // Reload page with new filters
+        // Reload page with new filters (for future filter options)
         window.location.href = currentUrl.toString();
     });
     

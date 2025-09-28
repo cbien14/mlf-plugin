@@ -72,38 +72,6 @@ jQuery(document).ready(function($) {
         }
     });
     
-    // Filter custom forms based on game type selection
-    $('#game_type').on('change', function() {
-        var selectedGameType = $(this).val();
-        var customFormSelect = $('#custom_form_id');
-        
-        // Show/hide form options based on game type compatibility
-        customFormSelect.find('option').each(function() {
-            var option = $(this);
-            var formGameType = option.data('game-type');
-            
-            if (!formGameType || formGameType === 'all' || formGameType === selectedGameType) {
-                option.show();
-            } else {
-                option.hide();
-            }
-        });
-        
-        // Reset selection if current selection is not compatible
-        var currentSelection = customFormSelect.val();
-        if (currentSelection) {
-            var currentOption = customFormSelect.find('option[value="' + currentSelection + '"]');
-            var currentGameType = currentOption.data('game-type');
-            
-            if (currentGameType && currentGameType !== 'all' && currentGameType !== selectedGameType) {
-                customFormSelect.val('');
-            }
-        }
-    });
-    
-    // Trigger initial filtering
-    $('#game_type').trigger('change');
-    
     // Handle image removal
     $('.mlf-remove-image-btn').on('click', function(e) {
         e.preventDefault();
@@ -141,14 +109,13 @@ jQuery(document).ready(function($) {
         var formData = {
             action: 'mlf_create_session',
             session_name: $('#session_name').val(),
-            game_type: $('#game_type').val(),
             session_date: $('#session_date').val(),
             session_time: $('#session_time').val(),
             duration_minutes: $('#duration_minutes').val(),
+            min_players: $('#min_players').val(),
             max_players: $('#max_players').val(),
             location: $('#location').val(),
-            difficulty_level: $('#difficulty_level').val(),
-            description: $('#description').val(),
+            intention_note: $('#intention_note').val(),
             synopsis: $('#synopsis').val(),
             trigger_warnings: $('#trigger_warnings').val(),
             safety_tools: $('#safety_tools').val(),
@@ -282,14 +249,13 @@ jQuery(document).ready(function($) {
             action: 'mlf_update_session',
             session_id: sessionId,
             session_name: $('#session_name').val(),
-            game_type: $('#game_type').val(),
             session_date: $('#session_date').val(),
             session_time: $('#session_time').val(),
             duration_minutes: $('#duration_minutes').val(),
+            min_players: $('#min_players').val(),
             max_players: $('#max_players').val(),
             location: $('#location').val(),
-            difficulty_level: $('#difficulty_level').val(),
-            description: $('#description').val(),
+            intention_note: $('#intention_note').val(),
             synopsis: $('#synopsis').val(),
             trigger_warnings: $('#trigger_warnings').val(),
             safety_tools: $('#safety_tools').val(),
@@ -342,6 +308,128 @@ jQuery(document).ready(function($) {
                     .addClass('notice-error')
                     .html('<p>Erreur de communication avec le serveur</p>')
                     .show();
+            }
+        });
+    });
+
+    // Handle session approval
+    $(document).on('click', '.mlf-approve-session', function(e) {
+        e.preventDefault();
+        
+        var sessionId = $(this).data('session-id');
+        var button = $(this);
+        var row = button.closest('tr');
+        
+        if (!confirm('Êtes-vous sûr de vouloir approuver cette session ?')) {
+            return;
+        }
+        
+        button.prop('disabled', true).text('Approbation...');
+        
+        $.ajax({
+            url: mlf_admin_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'mlf_approve_session',
+                session_id: sessionId,
+                nonce: mlf_admin_ajax.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Update status badge
+                    row.find('.mlf-status-badge')
+                        .removeClass('mlf-status-en-attente')
+                        .addClass('mlf-status-planifiee')
+                        .text(response.data.new_status_label);
+                    
+                    // Remove pending class
+                    row.removeClass('mlf-pending-session');
+                    
+                    // Replace buttons with standard ones
+                    var actionsCell = button.parent();
+                    button.siblings('.mlf-reject-session').remove();
+                    button.remove();
+                    
+                    // Show success message
+                    if ($('#mlf-session-message').length === 0) {
+                        $('h1').after('<div id="mlf-session-message" class="notice"></div>');
+                    }
+                    $('#mlf-session-message')
+                        .removeClass('notice-error')
+                        .addClass('notice-success')
+                        .html('<p>' + response.data.message + '</p>')
+                        .show();
+                    
+                    // Scroll to top
+                    $('html, body').animate({ scrollTop: 0 }, 300);
+                } else {
+                    alert('Erreur: ' + response.data.message);
+                    button.prop('disabled', false).html('✓ Approuver');
+                }
+            },
+            error: function() {
+                alert('Erreur de communication avec le serveur');
+                button.prop('disabled', false).html('✓ Approuver');
+            }
+        });
+    });
+
+    // Handle session rejection
+    $(document).on('click', '.mlf-reject-session', function(e) {
+        e.preventDefault();
+        
+        var sessionId = $(this).data('session-id');
+        var button = $(this);
+        var row = button.closest('tr');
+        var sessionName = row.find('td:first strong').text();
+        
+        var reason = prompt('Motif du rejet (optionnel) pour la session "' + sessionName + '" :');
+        if (reason === null) { // User cancelled
+            return;
+        }
+        
+        if (!confirm('Êtes-vous sûr de vouloir rejeter et supprimer cette session ? Cette action est irréversible.')) {
+            return;
+        }
+        
+        button.prop('disabled', true).text('Rejet...');
+        
+        $.ajax({
+            url: mlf_admin_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'mlf_reject_session',
+                session_id: sessionId,
+                reason: reason,
+                nonce: mlf_admin_ajax.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Remove the row
+                    row.fadeOut(300, function() {
+                        $(this).remove();
+                    });
+                    
+                    // Show success message
+                    if ($('#mlf-session-message').length === 0) {
+                        $('h1').after('<div id="mlf-session-message" class="notice"></div>');
+                    }
+                    $('#mlf-session-message')
+                        .removeClass('notice-error')
+                        .addClass('notice-success')
+                        .html('<p>' + response.data.message + '</p>')
+                        .show();
+                    
+                    // Scroll to top
+                    $('html, body').animate({ scrollTop: 0 }, 300);
+                } else {
+                    alert('Erreur: ' + response.data.message);
+                    button.prop('disabled', false).html('✗ Rejeter');
+                }
+            },
+            error: function() {
+                alert('Erreur de communication avec le serveur');
+                button.prop('disabled', false).html('✗ Rejeter');
             }
         });
     });

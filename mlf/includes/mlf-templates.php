@@ -37,13 +37,7 @@ function mlf_display_game_event($post_id = null) {
     <div class="mlf-game-event mlf-event-<?php echo $post_id; ?>">
         <div class="mlf-game-event-header">
             <h2 class="mlf-game-event-title"><?php echo esc_html($post->post_title); ?></h2>
-            <?php if (!empty($event_details['game_type'])): ?>
-                <span class="mlf-game-event-type"><?php 
-                    $game_type = $event_details['game_type'];
-                    $game_type = str_replace('_', ' ', $game_type);
-                    echo esc_html(ucwords($game_type)); 
-                ?></span>
-            <?php endif; ?>
+            <span class="mlf-game-event-type">Murder</span>
         </div>
         
         <div class="mlf-game-event-details">

@@ -86,7 +86,7 @@ class MLF_Activator {
             banner_image_url varchar(500) NULL,
             background_image_url varchar(500) NULL,
             notes text NULL,
-            status enum('planifiee', 'en_cours', 'terminee', 'annulee') DEFAULT 'planifiee',
+            status enum('en_attente', 'planifiee', 'en_cours', 'terminee', 'annulee') DEFAULT 'planifiee',
             registration_deadline datetime NULL,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -186,7 +186,7 @@ class MLF_Activator {
      * Get the database version for upgrade management.
      */
     public static function get_database_version() {
-        return '1.3.0'; // Suppression des colonnes is_public et requires_approval
+        return '1.4.0'; // Ajout du statut en_attente pour les propositions utilisateurs
     }
     
     /**
@@ -223,6 +223,11 @@ class MLF_Activator {
         // Migration vers 1.3.0 - Supprimer colonnes visibilité et modération
         if (version_compare($current_version, '1.3.0', '<')) {
             self::migrate_to_1_3_0();
+        }
+        
+        // Migration vers 1.4.0 - Ajouter statut en_attente pour propositions utilisateurs
+        if (version_compare($current_version, '1.4.0', '<')) {
+            self::migrate_to_1_4_0();
         }
         
         // Mettre à jour la version
@@ -594,6 +599,28 @@ class MLF_Activator {
         
         if ($requires_approval_exists) {
             $wpdb->query("ALTER TABLE $table_name DROP COLUMN requires_approval");
+        }
+    }
+
+    /**
+     * Migration vers version 1.4.0
+     * Ajoute le statut "en_attente" pour les propositions de sessions utilisateurs
+     */
+    private static function migrate_to_1_4_0() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'mlf_game_sessions';
+        
+        // Modifier l'ENUM status pour ajouter 'en_attente'
+        $wpdb->query("
+            ALTER TABLE $table_name 
+            MODIFY COLUMN status ENUM('en_attente', 'planifiee', 'en_cours', 'terminee', 'annulee') 
+            DEFAULT 'planifiee'
+        ");
+        
+        // Vérifier si des erreurs se sont produites
+        if ($wpdb->last_error) {
+            error_log('MLF Migration 1.4.0 Error: ' . $wpdb->last_error);
         }
     }
 }

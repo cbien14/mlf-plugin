@@ -27,6 +27,7 @@ class MLF_Frontend {
         add_shortcode('mlf_sessions_list', array($this, 'display_sessions_list'));
         add_shortcode('mlf_session_details', array($this, 'display_session_details'));
         add_shortcode('mlf_registration_form', array($this, 'display_registration_form'));
+        add_shortcode('mlf_propose_session', array($this, 'display_propose_session_form'));
     }
 
     /**
@@ -158,6 +159,11 @@ class MLF_Frontend {
 
         if ($atts['upcoming_only']) {
             $filters['date_from'] = date('Y-m-d');
+        }
+
+        // Exclure les sessions en attente de validation (sauf pour les administrateurs)
+        if (!current_user_can('manage_options')) {
+            $filters['exclude_status'] = 'en_attente';
         }
 
         $sessions = MLF_Database_Manager::get_game_sessions($filters);
@@ -882,6 +888,344 @@ class MLF_Frontend {
             }
         } else {
             wp_send_json_error(array('message' => 'Aucune donnée à sauvegarder.'));
+        }
+    }
+
+    /**
+     * Affiche le formulaire de proposition de session pour les utilisateurs connectés.
+     */
+    public function display_propose_session_form($atts) {
+        // Vérifier que l'utilisateur est connecté
+        if (!is_user_logged_in()) {
+            return '<div class="mlf-login-required">' .
+                   '<p>' . __('Vous devez être connecté pour proposer une session.', 'mlf') . '</p>' .
+                   '<a href="' . wp_login_url(get_permalink()) . '" class="mlf-btn mlf-btn-secondary">' . __('Se connecter', 'mlf') . '</a>' .
+                   '</div>';
+        }
+
+        $current_user = wp_get_current_user();
+
+        // Gérer la soumission du formulaire
+        if (isset($_POST['mlf_propose_session_submit']) && wp_verify_nonce($_POST['mlf_propose_session_nonce'], 'mlf_propose_session')) {
+            $result = $this->handle_session_proposal($_POST);
+            if ($result['success']) {
+                return '<div class="mlf-success-message">' .
+                       '<h3>' . __('Session proposée avec succès !', 'mlf') . '</h3>' .
+                       '<p>' . $result['message'] . '</p>' .
+                       '<a href="' . get_permalink() . '" class="mlf-btn mlf-btn-primary">' . __('Proposer une autre session', 'mlf') . '</a>' .
+                       '</div>';
+            } else {
+                $error_message = '<div class="mlf-error-message"><p>' . $result['message'] . '</p></div>';
+            }
+        }
+
+        ob_start();
+        ?>
+        <div class="mlf-propose-session-container">
+            <h3><?php _e('Proposer une nouvelle session Murder', 'mlf'); ?></h3>
+            
+            <?php if (isset($error_message)) echo $error_message; ?>
+            
+            <form id="mlf-propose-session-form" class="mlf-form" method="post">
+                <?php wp_nonce_field('mlf_propose_session', 'mlf_propose_session_nonce'); ?>
+                
+                <!-- Informations organisateur -->
+                <div class="mlf-organizer-info-section">
+                    <h4><?php _e('Organisateur de la session', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="game_master_name"><?php _e('Nom de l\'organisateur', 'mlf'); ?> *</label>
+                        <input type="text" id="game_master_name" name="game_master_name" 
+                               value="<?php echo esc_attr($current_user->display_name); ?>" 
+                               required />
+                        <small class="mlf-field-note"><?php _e('Ce nom apparaîtra sur la fiche de session', 'mlf'); ?></small>
+                    </div>
+                </div>
+
+                <!-- Informations générales -->
+                <div class="mlf-session-info-section">
+                    <h4><?php _e('Informations de la session', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="session_name"><?php _e('Nom de la session', 'mlf'); ?> *</label>
+                        <input type="text" id="session_name" name="session_name" required 
+                               placeholder="<?php _e('Ex: Le Manoir de Blackwood', 'mlf'); ?>" />
+                    </div>
+
+                    <div class="mlf-form-row">
+                        <div class="mlf-form-group">
+                            <label for="session_date"><?php _e('Date de la session', 'mlf'); ?> *</label>
+                            <input type="date" id="session_date" name="session_date" required 
+                                   min="<?php echo date('Y-m-d'); ?>" />
+                        </div>
+                        
+                        <div class="mlf-form-group">
+                            <label for="session_time"><?php _e('Heure de début', 'mlf'); ?> *</label>
+                            <input type="time" id="session_time" name="session_time" required 
+                                   value="20:00" />
+                        </div>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="duration_minutes"><?php _e('Durée (en minutes)', 'mlf'); ?> *</label>
+                        <input type="number" id="duration_minutes" name="duration_minutes" required 
+                               value="120" min="60" max="480" />
+                        <small class="mlf-field-note"><?php _e('Durée estimée de la session', 'mlf'); ?></small>
+                    </div>
+
+                    <div class="mlf-form-row">
+                        <div class="mlf-form-group">
+                            <label for="min_players"><?php _e('Nombre minimum de joueurs', 'mlf'); ?> *</label>
+                            <input type="number" id="min_players" name="min_players" required 
+                                   value="3" min="2" max="20" />
+                        </div>
+                        
+                        <div class="mlf-form-group">
+                            <label for="max_players"><?php _e('Nombre maximum de joueurs', 'mlf'); ?> *</label>
+                            <input type="number" id="max_players" name="max_players" required 
+                                   value="6" min="3" max="20" />
+                        </div>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="location"><?php _e('Lieu', 'mlf'); ?></label>
+                        <input type="text" id="location" name="location" 
+                               placeholder="<?php _e('Ex: En ligne (Discord), Paris 15e, etc.', 'mlf'); ?>" />
+                    </div>
+                </div>
+
+                <!-- Description détaillée -->
+                <div class="mlf-content-section">
+                    <h4><?php _e('Contenu de la session', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="synopsis"><?php _e('Synopsis', 'mlf'); ?> *</label>
+                        <textarea id="synopsis" name="synopsis" required rows="4" 
+                                  placeholder="<?php _e('Décrivez l\'intrigue et l\'ambiance de votre Murder...', 'mlf'); ?>"></textarea>
+                        <small class="mlf-field-note"><?php _e('Description attractive de votre scenario', 'mlf'); ?></small>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="intention_note"><?php _e('Note d\'intention', 'mlf'); ?></label>
+                        <textarea id="intention_note" name="intention_note" rows="3" 
+                                  placeholder="<?php _e('Vos objectifs pédagogiques ou créatifs pour cette session...', 'mlf'); ?>"></textarea>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="trigger_warnings"><?php _e('Avertissements sur le contenu', 'mlf'); ?></label>
+                        <textarea id="trigger_warnings" name="trigger_warnings" rows="2" 
+                                  placeholder="<?php _e('Violence, thèmes sensibles, etc.', 'mlf'); ?>"></textarea>
+                        <small class="mlf-field-note"><?php _e('Mentionnez les éléments qui pourraient être sensibles', 'mlf'); ?></small>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="safety_tools"><?php _e('Outils de sécurité', 'mlf'); ?></label>
+                        <textarea id="safety_tools" name="safety_tools" rows="2" 
+                                  placeholder="<?php _e('Ex: Carte X, Lignes et voiles, etc.', 'mlf'); ?>"></textarea>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="prerequisites"><?php _e('Prérequis', 'mlf'); ?></label>
+                        <textarea id="prerequisites" name="prerequisites" rows="2" 
+                                  placeholder="<?php _e('Expérience requise, matériel nécessaire...', 'mlf'); ?>"></textarea>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="additional_info"><?php _e('Informations supplémentaires', 'mlf'); ?></label>
+                        <textarea id="additional_info" name="additional_info" rows="3" 
+                                  placeholder="<?php _e('Toute autre information utile...', 'mlf'); ?>"></textarea>
+                    </div>
+                </div>
+
+                <!-- Images -->
+                <div class="mlf-images-section">
+                    <h4><?php _e('Images (optionnel)', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="banner_image_url"><?php _e('Image de bannière (URL)', 'mlf'); ?></label>
+                        <input type="url" id="banner_image_url" name="banner_image_url" 
+                               placeholder="<?php _e('https://exemple.com/image.jpg', 'mlf'); ?>" />
+                        <small class="mlf-field-note"><?php _e('Image d\'en-tête pour votre session (16:9 recommandé)', 'mlf'); ?></small>
+                    </div>
+
+                    <div class="mlf-form-group">
+                        <label for="background_image_url"><?php _e('Image de fond (URL)', 'mlf'); ?></label>
+                        <input type="url" id="background_image_url" name="background_image_url" 
+                               placeholder="<?php _e('https://exemple.com/background.jpg', 'mlf'); ?>" />
+                    </div>
+                </div>
+
+                <!-- Date limite d'inscription -->
+                <div class="mlf-registration-section">
+                    <h4><?php _e('Inscription', 'mlf'); ?></h4>
+                    
+                    <div class="mlf-form-group">
+                        <label for="registration_deadline"><?php _e('Date limite d\'inscription', 'mlf'); ?></label>
+                        <input type="date" id="registration_deadline" name="registration_deadline" 
+                               min="<?php echo date('Y-m-d'); ?>" />
+                        <small class="mlf-field-note"><?php _e('Laisser vide pour aucune limite', 'mlf'); ?></small>
+                    </div>
+                </div>
+
+                <div class="mlf-form-actions">
+                    <input type="submit" name="mlf_propose_session_submit" 
+                           class="mlf-btn mlf-btn-primary" 
+                           value="<?php _e('Proposer cette session', 'mlf'); ?>" />
+                    
+                    <p class="mlf-form-note">
+                        <?php _e('Votre session sera soumise à validation avant d\'être publiée.', 'mlf'); ?>
+                    </p>
+                </div>
+            </form>
+        </div>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Validation des nombres de joueurs
+            const minPlayers = document.getElementById('min_players');
+            const maxPlayers = document.getElementById('max_players');
+            
+            function validatePlayerCount() {
+                const min = parseInt(minPlayers.value);
+                const max = parseInt(maxPlayers.value);
+                
+                if (min && max && min >= max) {
+                    maxPlayers.setCustomValidity('Le nombre maximum doit être supérieur au minimum');
+                } else {
+                    maxPlayers.setCustomValidity('');
+                }
+            }
+            
+            minPlayers.addEventListener('change', validatePlayerCount);
+            maxPlayers.addEventListener('change', validatePlayerCount);
+            
+            // Auto-ajustement des dates
+            const sessionDate = document.getElementById('session_date');
+            const registrationDeadline = document.getElementById('registration_deadline');
+            
+            sessionDate.addEventListener('change', function() {
+                const selectedDate = new Date(this.value);
+                const deadlineDate = new Date(selectedDate);
+                deadlineDate.setDate(deadlineDate.getDate() - 1); // 1 jour avant par défaut
+                
+                registrationDeadline.max = this.value;
+                if (!registrationDeadline.value) {
+                    registrationDeadline.value = deadlineDate.toISOString().split('T')[0];
+                }
+            });
+        });
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Traite la soumission d'une proposition de session.
+     */
+    private function handle_session_proposal($data) {
+        $current_user = wp_get_current_user();
+
+        // Validation des données
+        $required_fields = ['session_name', 'session_date', 'session_time', 'min_players', 'max_players', 'synopsis'];
+        foreach ($required_fields as $field) {
+            if (empty($data[$field])) {
+                return array(
+                    'success' => false,
+                    'message' => sprintf(__('Le champ "%s" est requis.', 'mlf'), $field)
+                );
+            }
+        }
+
+        // Validation des nombres de joueurs
+        $min_players = intval($data['min_players']);
+        $max_players = intval($data['max_players']);
+        if ($min_players >= $max_players) {
+            return array(
+                'success' => false,
+                'message' => __('Le nombre maximum de joueurs doit être supérieur au minimum.', 'mlf')
+            );
+        }
+
+        // Validation de la date
+        $session_datetime = $data['session_date'] . ' ' . $data['session_time'];
+        if (strtotime($session_datetime) <= time()) {
+            return array(
+                'success' => false,
+                'message' => __('La date de session doit être dans le futur.', 'mlf')
+            );
+        }
+
+        // Préparer les données pour l'insertion
+        $session_data = array(
+            'session_name' => sanitize_text_field($data['session_name']),
+            'game_master_id' => $current_user->ID,
+            'game_master_name' => sanitize_text_field($data['game_master_name']),
+            'session_date' => sanitize_text_field($data['session_date']),
+            'session_time' => sanitize_text_field($data['session_time']),
+            'duration_minutes' => intval($data['duration_minutes']),
+            'min_players' => $min_players,
+            'max_players' => $max_players,
+            'current_players' => 0,
+            'location' => sanitize_text_field($data['location']),
+            'synopsis' => sanitize_textarea_field($data['synopsis']),
+            'intention_note' => sanitize_textarea_field($data['intention_note']),
+            'trigger_warnings' => sanitize_textarea_field($data['trigger_warnings']),
+            'safety_tools' => sanitize_textarea_field($data['safety_tools']),
+            'prerequisites' => sanitize_textarea_field($data['prerequisites']),
+            'additional_info' => sanitize_textarea_field($data['additional_info']),
+            'banner_image_url' => esc_url_raw($data['banner_image_url']),
+            'background_image_url' => esc_url_raw($data['background_image_url']),
+            'registration_deadline' => !empty($data['registration_deadline']) ? sanitize_text_field($data['registration_deadline']) : null,
+            'status' => 'en_attente' // Statut en attente de validation
+        );
+
+        // Créer la session
+        $session_id = MLF_Database_Manager::create_game_session($session_data);
+
+        if ($session_id) {
+            // Notifier les administrateurs (optionnel)
+            $this->notify_admin_new_session_proposal($session_id, $current_user);
+
+            return array(
+                'success' => true,
+                'message' => __('Votre session a été proposée avec succès ! Elle sera examinée par un administrateur avant publication.', 'mlf'),
+                'session_id' => $session_id
+            );
+        } else {
+            return array(
+                'success' => false,
+                'message' => __('Erreur lors de la création de la session. Veuillez réessayer.', 'mlf')
+            );
+        }
+    }
+
+    /**
+     * Envoie une notification aux administrateurs pour une nouvelle proposition.
+     */
+    private function notify_admin_new_session_proposal($session_id, $user) {
+        $subject = sprintf(__('Nouvelle proposition de session Murder - %s', 'mlf'), get_bloginfo('name'));
+        $message = sprintf(
+            __('Une nouvelle session Murder a été proposée par %s (%s).
+
+Session ID: %d
+Organisateur: %s
+Email: %s
+
+Veuillez vous rendre dans l\'administration pour examiner cette proposition.
+
+Lien d\'administration: %s', 'mlf'),
+            $user->display_name,
+            $user->user_login,
+            $session_id,
+            $user->display_name,
+            $user->user_email,
+            admin_url('admin.php?page=mlf-sessions')
+        );
+
+        // Envoyer à tous les administrateurs
+        $admin_users = get_users(array('role' => 'administrator'));
+        foreach ($admin_users as $admin) {
+            wp_mail($admin->user_email, $subject, $message);
         }
     }
 

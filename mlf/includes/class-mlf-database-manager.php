@@ -14,6 +14,7 @@ class MLF_Database_Manager {
         
         $defaults = array(
             'status' => null,
+            'exclude_status' => null,
             'date_from' => null,
             'date_to' => null,
             'limit' => 50,
@@ -31,6 +32,11 @@ class MLF_Database_Manager {
         if ($args['status']) {
             $where_clauses[] = "status = %s";
             $where_values[] = $args['status'];
+        }
+        
+        if ($args['exclude_status']) {
+            $where_clauses[] = "status != %s";
+            $where_values[] = $args['exclude_status'];
         }
         
         if ($args['date_from']) {

@@ -2,7 +2,11 @@
 /**
  * User Account functionality for the MLF Plugin.
  *
- * This class handles user account features including viewing user's session history.
+ * Th            $output .= '<div class="mlf-session-card">
+                <div class="mlf-session-header">
+                    <h3>' . esc_html($session['session_name']) . '</h3>
+                    <span class="mlf-session-type">Murder</span>
+                </div>';ass handles user account features including viewing user's session history.
  */
 class MLF_User_Account {
 
@@ -217,11 +221,10 @@ class MLF_User_Account {
                 pr.registration_date,
                 pr.notes,
                 gs.session_name,
-                gs.game_type,
                 gs.session_date,
                 gs.session_time,
                 gs.location,
-                gs.description,
+                gs.intention_note,
                 gs.max_players,
                 gs.current_players
             FROM {$wpdb->prefix}mlf_player_registrations pr
@@ -336,18 +339,6 @@ class MLF_User_Account {
             'message' => 'Inscription annulée avec succès.',
             'registration_id' => $registration_id
         ));
-    }
-
-    /**
-     * Get game type label.
-     */
-    private function get_game_type_label($type) {
-        $labels = array(
-            'jdr' => __('JDR', 'mlf'),
-            'murder' => __('Murder Party', 'mlf'),
-            'jeu_de_societe' => __('Jeu de société', 'mlf'),
-        );
-        return isset($labels[$type]) ? $labels[$type] : ucfirst($type);
     }
 
     /**
